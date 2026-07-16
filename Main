@@ -2564,10 +2564,10 @@ local function CreateGameLauncherButton(name, text, order, url, label, openFunct
 	return button
 end
 
-HubState.MM2GameButton = CreateGameLauncherButton("MM2GameButton", "MM2", 1, "https://raw.githubusercontent.com/2hqydeu/Hqydeu-Script-Hub/refs/heads/main/MM2", "MM2", "OpenMM2Page")
-HubState.QuietOrDieGameButton = CreateGameLauncherButton("QuietOrDieGameButton", "Quiet or Die", 2, "https://raw.githubusercontent.com/2hqydeu/Hqydeu-Script-Hub/refs/heads/main/QOD", "Quiet Or Die", "OpenQuietOrDiePage")
-HubState.GrowABeehiveGameButton = CreateGameLauncherButton("GrowABeehiveGameButton", "Grow a Beehive", 3, "https://raw.githubusercontent.com/2hqydeu/Hqydeu-Script-Hub/refs/heads/main/GABH", "Grow A Beehive", "OpenGrowABeehivePage")
-HubState.UndeadExpeditionGameButton = CreateGameLauncherButton("UndeadExpeditionGameButton", "Undead Expedition", 4, "https://raw.githubusercontent.com/2hqydeu/Hqydeu-Script-Hub/refs/heads/main/UE", "Undead Expedition", "OpenUndeadExpeditionPage")
+HubState.MM2GameButton = CreateGameLauncherButton("MM2GameButton", "MM2", 1, "https://raw.githubusercontent.com/2hqydeu/old-ui/refs/heads/main/MM2", "MM2", "OpenMM2Page")
+HubState.QuietOrDieGameButton = CreateGameLauncherButton("QuietOrDieGameButton", "Quiet or Die", 2, "https://raw.githubusercontent.com/2hqydeu/old-ui/refs/heads/main/QOD", "Quiet Or Die", "OpenQuietOrDiePage")
+HubState.GrowABeehiveGameButton = CreateGameLauncherButton("GrowABeehiveGameButton", "Grow a Beehive", 3, "https://raw.githubusercontent.com/2hqydeu/old-ui/refs/heads/main/GABH", "Grow A Beehive", "OpenGrowABeehivePage")
+HubState.UndeadExpeditionGameButton = CreateGameLauncherButton("UndeadExpeditionGameButton", "Undead Expedition", 4, "https://raw.githubusercontent.com/2hqydeu/old-ui/refs/heads/main/UE", "Undead Expedition", "OpenUndeadExpeditionPage")
 
 ApplyCardGridLayout(HubState.GamesPage)
 
@@ -6960,13 +6960,13 @@ OptimizeBtn.MouseButton1Click:Connect(function()
 		ThemeObjects.OpenOptimizeDock()
 		return
 	end
-	ThemeObjects.ScriptRunner.RunUrl("https://raw.githubusercontent.com/2hqydeu/Hqydeu-Script-Hub/refs/heads/main/Optimize", "Optimize")
+	ThemeObjects.ScriptRunner.RunUrl("https://raw.githubusercontent.com/2hqydeu/old-ui/refs/heads/main/Optimize", "Optimize")
 end)
 ThemeObjects.AddFeatureKeybind({Name = "Optimize Menu", Category = "Main Features", Storage = "OptimizeMenu", Get = function() return LoadKeybind("OptimizeMenu") end, Set = function(key) SaveKeybind("OptimizeMenu", key) end, Action = function()
 	if ThemeObjects.OpenOptimizeDock then
 		ThemeObjects.OpenOptimizeDock()
 	else
-		ThemeObjects.ScriptRunner.RunUrl("https://raw.githubusercontent.com/2hqydeu/Hqydeu-Script-Hub/refs/heads/main/Optimize", "Optimize")
+		ThemeObjects.ScriptRunner.RunUrl("https://raw.githubusercontent.com/2hqydeu/old-ui/refs/heads/main/Optimize", "Optimize")
 	end
 end})
 ResetThemeBtn.MouseButton1Click:Connect(function()

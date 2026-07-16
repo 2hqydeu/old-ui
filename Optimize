@@ -1,0 +1,474 @@
+-- Settings optimize module for Hqydeu Script Hub. Upload this file to its raw GitHub target.
+local Runtime = (type(getgenv) == "function" and getgenv().HqydeuLoader_Runtime) or shared.HqydeuLoader_Runtime
+if not Runtime then return warn("Hqydeu optimize module: main hub runtime was not found") end
+
+local HubState = Runtime.HubState
+local ThemeObjects = Runtime.ThemeObjects
+local MainFrame = Runtime.MainFrame
+local ScreenGui = Runtime.ScreenGui or (MainFrame and MainFrame:FindFirstAncestorOfClass("ScreenGui"))
+local Player = Runtime.Player or game:GetService("Players").LocalPlayer
+local Lighting = game:GetService("Lighting")
+local PlayClick = Runtime.PlayClick or function() end
+local TrackConnection = Runtime.TrackConnection or function(name, connection) HubState.Connections[name] = connection; return connection end
+local UpdateTheme = Runtime.UpdateTheme or function() end
+local LoadKeybind = Runtime.LoadKeybind or function() return Enum.KeyCode.Unknown end
+local SaveKeybind = Runtime.SaveKeybind or function() end
+local GuiScaleFromValue = Runtime.GuiScaleFromValue or function() return 1 end
+local GuiSizeValue = Runtime.GuiSizeValue or 50
+local GetAccentColor = Runtime.GetAccentColor or function() return Color3.fromRGB(0, 210, 255) end
+local GetFrameThemeColor = Runtime.GetFrameThemeColor or function() return Color3.fromRGB(28, 28, 38) end
+if not HubState or not ThemeObjects or not MainFrame or not ScreenGui then return warn("Hqydeu optimize module: runtime is incomplete") end
+HubState.Connections = HubState.Connections or {}
+
+local ModuleVersion = "OptimizeDock-v2"
+local existingDock = ScreenGui:FindFirstChild("OptimizeDock")
+if existingDock and existingDock:GetAttribute("ModuleVersion") == ModuleVersion and ThemeObjects.OpenOptimizeDock then
+	ThemeObjects.OpenOptimizeDock()
+	return
+end
+if ThemeObjects.RestoreOptimizer then pcall(ThemeObjects.RestoreOptimizer) end
+if existingDock then existingDock:Destroy() end
+for _, connectionName in ipairs({"OptimizeDockPosition", "OptimizeDockSize", "OptimizerDescendantAdded"}) do
+	if HubState.Connections[connectionName] then
+		HubState.Connections[connectionName]:Disconnect()
+		HubState.Connections[connectionName] = nil
+	end
+end
+
+local function AddText(object)
+	table.insert(ThemeObjects.Texts, object)
+	return object
+end
+
+local function AddBackground(object)
+	table.insert(ThemeObjects.Backgrounds, object)
+	return object
+end
+
+local function AccentColor()
+	return GetAccentColor()
+end
+
+local function FrameThemeColor()
+	return GetFrameThemeColor()
+end
+
+local OptimizeFrame = Instance.new("Frame")
+OptimizeFrame.Name = "OptimizeDock"
+OptimizeFrame:SetAttribute("ModuleVersion", ModuleVersion)
+OptimizeFrame.Size = UDim2.new(0, 130, 0, 226)
+OptimizeFrame.AnchorPoint = Vector2.new(1, 0)
+OptimizeFrame.BackgroundColor3 = FrameThemeColor()
+OptimizeFrame.BackgroundTransparency = 0.04
+OptimizeFrame.BorderSizePixel = 0
+OptimizeFrame.ZIndex = 80
+OptimizeFrame.Visible = false
+OptimizeFrame.Parent = ScreenGui
+ThemeObjects.OptimizeDock = OptimizeFrame
+AddBackground(OptimizeFrame)
+Instance.new("UICorner", OptimizeFrame).CornerRadius = UDim.new(0, 9)
+
+local OptimizeDockStroke = Instance.new("UIStroke")
+OptimizeDockStroke.Color = AccentColor()
+OptimizeDockStroke.Thickness = 1.5
+OptimizeDockStroke.Transparency = 0
+OptimizeDockStroke.Parent = OptimizeFrame
+table.insert(ThemeObjects.Accents, OptimizeDockStroke)
+
+local OptimizeDockScale = Instance.new("UIScale")
+OptimizeDockScale.Scale = GuiScaleFromValue(GuiSizeValue)
+OptimizeDockScale.Parent = OptimizeFrame
+ThemeObjects.OptimizeDockScale = OptimizeDockScale
+
+ThemeObjects.UpdateOptimizeDockPosition = function()
+	local scale = OptimizeDockScale.Scale
+	OptimizeFrame.Position = UDim2.fromOffset(MainFrame.AbsolutePosition.X - (7 * scale), MainFrame.AbsolutePosition.Y + (36 * scale))
+end
+TrackConnection("OptimizeDockPosition", MainFrame:GetPropertyChangedSignal("AbsolutePosition"):Connect(ThemeObjects.UpdateOptimizeDockPosition))
+TrackConnection("OptimizeDockSize", MainFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(ThemeObjects.UpdateOptimizeDockPosition))
+ThemeObjects.UpdateOptimizeDockPosition()
+
+local OptimizeTitle = Instance.new("TextLabel")
+OptimizeTitle.Size = UDim2.new(0, 92, 0, 16)
+OptimizeTitle.Position = UDim2.new(0, 8, 0, 7)
+OptimizeTitle.BackgroundTransparency = 1
+OptimizeTitle.Text = "Optimize"
+OptimizeTitle.Font = Enum.Font.GothamBold
+OptimizeTitle.TextSize = 10
+OptimizeTitle.TextXAlignment = Enum.TextXAlignment.Left
+OptimizeTitle.ZIndex = 81
+OptimizeTitle.Parent = OptimizeFrame
+AddText(OptimizeTitle)
+
+local OptimizeCloseBtn = Instance.new("TextButton")
+OptimizeCloseBtn.Size = UDim2.new(0, 18, 0, 18)
+OptimizeCloseBtn.Position = UDim2.new(1, -26, 0, 6)
+OptimizeCloseBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+OptimizeCloseBtn.BackgroundTransparency = 0.8
+OptimizeCloseBtn.BorderSizePixel = 0
+OptimizeCloseBtn.Text = "x"
+OptimizeCloseBtn.Font = Enum.Font.GothamBold
+OptimizeCloseBtn.TextSize = 8
+OptimizeCloseBtn.ZIndex = 81
+OptimizeCloseBtn.Parent = OptimizeFrame
+AddBackground(OptimizeCloseBtn)
+AddText(OptimizeCloseBtn)
+Instance.new("UICorner", OptimizeCloseBtn).CornerRadius = UDim.new(0, 5)
+
+local OptimizeScroll = Instance.new("ScrollingFrame")
+OptimizeScroll.Name = "OptimizeScroll"
+OptimizeScroll.Size = UDim2.new(1, -16, 1, -44)
+OptimizeScroll.Position = UDim2.new(0, 8, 0, 30)
+OptimizeScroll.BackgroundTransparency = 1
+OptimizeScroll.BorderSizePixel = 0
+OptimizeScroll.ScrollBarThickness = 3
+OptimizeScroll.ScrollBarImageColor3 = AccentColor()
+OptimizeScroll.ScrollingDirection = Enum.ScrollingDirection.Y
+OptimizeScroll.ElasticBehavior = Enum.ElasticBehavior.Never
+OptimizeScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+OptimizeScroll.ZIndex = 81
+OptimizeScroll.Parent = OptimizeFrame
+
+local OptimizeStatus = Instance.new("TextLabel")
+OptimizeStatus.Size = UDim2.new(0, 114, 0, 10)
+OptimizeStatus.Position = UDim2.new(0, 8, 1, -13)
+OptimizeStatus.BackgroundTransparency = 1
+OptimizeStatus.Text = "Ready"
+OptimizeStatus.Font = Enum.Font.GothamBold
+OptimizeStatus.TextSize = 7
+OptimizeStatus.TextXAlignment = Enum.TextXAlignment.Center
+OptimizeStatus.TextTruncate = Enum.TextTruncate.AtEnd
+OptimizeStatus.ZIndex = 81
+OptimizeStatus.Parent = OptimizeFrame
+AddText(OptimizeStatus)
+
+ThemeObjects.Optimizer = ThemeObjects.Optimizer or {}
+ThemeObjects.Optimizer.States = ThemeObjects.Optimizer.States or {
+	LowGraphics = false,
+	NoEffects = false,
+	NoParticles = false,
+	NoTextures = false,
+	NoShadows = false,
+	SmoothParts = false,
+	HideClutter = false,
+	LowWater = false,
+}
+ThemeObjects.Optimizer.Originals = setmetatable({}, {__mode = "k"})
+ThemeObjects.Optimizer.Buttons = {}
+ThemeObjects.Optimizer.ApplyToken = (ThemeObjects.Optimizer.ApplyToken or 0) + 1
+
+local function NextOptimizeToken()
+	ThemeObjects.Optimizer.ApplyToken = (ThemeObjects.Optimizer.ApplyToken or 0) + 1
+	return ThemeObjects.Optimizer.ApplyToken
+end
+
+local function OptimizerRemember(object, property)
+	if not object then return end
+	local bucket = ThemeObjects.Optimizer.Originals[object]
+	if not bucket then
+		bucket = {}
+		ThemeObjects.Optimizer.Originals[object] = bucket
+	end
+	if bucket[property] ~= nil then return end
+	local ok, value = pcall(function()
+		return object[property]
+	end)
+	if ok then bucket[property] = value end
+end
+
+local function OptimizerSet(object, property, value)
+	if not object then return end
+	OptimizerRemember(object, property)
+	pcall(function()
+		object[property] = value
+	end)
+end
+
+local function IsOwnCharacterObject(object)
+	local character = Player.Character
+	return character and object and object:IsDescendantOf(character)
+end
+
+local function OptimizerApplyObject(object)
+	local states = ThemeObjects.Optimizer.States
+	if states.NoParticles then
+		if object:IsA("ParticleEmitter") or object:IsA("Trail") or object:IsA("Beam") or object:IsA("Smoke") or object:IsA("Fire") or object:IsA("Sparkles") then
+			OptimizerSet(object, "Enabled", false)
+		end
+	end
+	if states.NoEffects then
+		if object:IsA("BloomEffect") or object:IsA("BlurEffect") or object:IsA("SunRaysEffect") or object:IsA("DepthOfFieldEffect") or object:IsA("ColorCorrectionEffect") then
+			OptimizerSet(object, "Enabled", false)
+		elseif object:IsA("Atmosphere") then
+			OptimizerSet(object, "Density", 0)
+			OptimizerSet(object, "Haze", 0)
+			OptimizerSet(object, "Glare", 0)
+		end
+	end
+	if states.NoTextures then
+		if object:IsA("Decal") or object:IsA("Texture") then
+			OptimizerSet(object, "Transparency", 1)
+		end
+	end
+	if object:IsA("BasePart") then
+		if states.NoShadows or states.HideClutter then
+			OptimizerSet(object, "CastShadow", false)
+		end
+		if states.SmoothParts then
+			OptimizerSet(object, "Material", Enum.Material.SmoothPlastic)
+			OptimizerSet(object, "Reflectance", 0)
+		end
+		if states.HideClutter and not IsOwnCharacterObject(object) and object.CanCollide == false and object.Transparency < 0.95 and object.Size.Magnitude <= 18 then
+			OptimizerSet(object, "LocalTransparencyModifier", 1)
+		end
+	end
+end
+
+local function OptimizerApplyLighting()
+	local states = ThemeObjects.Optimizer.States
+	local lighting = Lighting
+	if states.LowGraphics then
+		OptimizerSet(lighting, "GlobalShadows", false)
+		OptimizerSet(lighting, "FogEnd", 100000)
+		OptimizerSet(lighting, "Brightness", 1.5)
+		pcall(function()
+			OptimizerSet(lighting, "EnvironmentDiffuseScale", 0)
+			OptimizerSet(lighting, "EnvironmentSpecularScale", 0)
+		end)
+		pcall(function()
+			OptimizerSet(settings().Rendering, "QualityLevel", Enum.QualityLevel.Level01)
+		end)
+	end
+	if states.LowWater then
+		local terrain = workspace:FindFirstChildOfClass("Terrain")
+		if terrain then
+			OptimizerSet(terrain, "WaterWaveSize", 0)
+			OptimizerSet(terrain, "WaterWaveSpeed", 0)
+			OptimizerSet(terrain, "WaterReflectance", 0)
+			OptimizerSet(terrain, "WaterTransparency", 1)
+		end
+	end
+end
+
+local function OptimizerAnyEnabled()
+	for _, enabled in pairs(ThemeObjects.Optimizer.States) do
+		if enabled then return true end
+	end
+	return false
+end
+
+local function OptimizerRestoreAllAsync(token, done)
+	task.spawn(function()
+		local processed = 0
+		for object, properties in pairs(ThemeObjects.Optimizer.Originals) do
+			if token ~= ThemeObjects.Optimizer.ApplyToken then return end
+			for property, value in pairs(properties) do
+				pcall(function()
+					object[property] = value
+				end)
+				processed += 1
+				if processed % 120 == 0 then
+					task.wait()
+				end
+			end
+		end
+		if token ~= ThemeObjects.Optimizer.ApplyToken then return end
+		ThemeObjects.Optimizer.Originals = setmetatable({}, {__mode = "k"})
+		if done then done() end
+	end)
+end
+
+local function OptimizerApplyActiveAsync(token)
+	if not OptimizerAnyEnabled() then
+		OptimizeStatus.Text = "Ready"
+		return
+	end
+	OptimizerApplyLighting()
+	OptimizeStatus.Text = "Applying..."
+	task.spawn(function()
+		local processed = 0
+		local playerGui = Player and Player:FindFirstChildOfClass("PlayerGui")
+		local roots = {workspace, Lighting, playerGui}
+		for _, root in ipairs(roots) do
+			if token ~= ThemeObjects.Optimizer.ApplyToken then return end
+			if root then
+				OptimizerApplyObject(root)
+				for _, object in ipairs(root:GetDescendants()) do
+					if token ~= ThemeObjects.Optimizer.ApplyToken then return end
+					OptimizerApplyObject(object)
+					processed += 1
+					if processed % 140 == 0 then
+						OptimizeStatus.Text = "Applying " .. tostring(processed)
+						task.wait()
+					end
+				end
+			end
+		end
+		if token == ThemeObjects.Optimizer.ApplyToken then
+			OptimizeStatus.Text = "Applied"
+		end
+	end)
+end
+
+local function RefreshOptimizeButtons()
+	for _, entry in ipairs(ThemeObjects.Optimizer.Buttons) do
+		if entry.Kind == "Restore" then
+			entry.Button.Text = "Restore"
+			entry.Button.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+			entry.Button.BackgroundTransparency = 0
+		elseif entry.Kind == "Boost" then
+			entry.Button.Text = "FPS Boost"
+			entry.Button.BackgroundColor3 = OptimizerAnyEnabled() and AccentColor() or Color3.fromRGB(45, 45, 45)
+			entry.Button.BackgroundTransparency = OptimizerAnyEnabled() and 0 or 0.8
+		else
+			local enabled = ThemeObjects.Optimizer.States[entry.Kind] == true
+			entry.Button.Text = (enabled and "On  " or "Off ") .. entry.Label
+			entry.Button.BackgroundColor3 = enabled and AccentColor() or Color3.fromRGB(45, 45, 45)
+			entry.Button.BackgroundTransparency = enabled and 0 or 0.8
+		end
+	end
+end
+
+local function FinishOptimizerChange()
+	RefreshOptimizeButtons()
+	UpdateTheme(true)
+end
+
+local function SetOptimizerFeature(kind, enabled)
+	ThemeObjects.Optimizer.States[kind] = enabled
+	local token = NextOptimizeToken()
+	if enabled then
+		OptimizerApplyActiveAsync(token)
+	else
+		OptimizeStatus.Text = "Restoring..."
+		OptimizerRestoreAllAsync(token, function()
+			OptimizerApplyActiveAsync(token)
+		end)
+	end
+	FinishOptimizerChange()
+end
+
+local function RestoreOptimizer()
+	for kind in pairs(ThemeObjects.Optimizer.States) do
+		ThemeObjects.Optimizer.States[kind] = false
+	end
+	local token = NextOptimizeToken()
+	OptimizeStatus.Text = "Restoring..."
+	OptimizerRestoreAllAsync(token, function()
+		OptimizeStatus.Text = "Restored"
+	end)
+	FinishOptimizerChange()
+end
+
+local function ApplyFpsBoost()
+	for kind in pairs(ThemeObjects.Optimizer.States) do
+		ThemeObjects.Optimizer.States[kind] = true
+	end
+	local token = NextOptimizeToken()
+	OptimizerApplyActiveAsync(token)
+	FinishOptimizerChange()
+end
+
+local function CreateOptimizeOption(kind, label, y)
+	local button = Instance.new("TextButton")
+	button.Name = "Optimize" .. kind
+	button.Size = UDim2.new(0, 110, 0, 20)
+	button.Position = UDim2.new(0, 0, 0, y)
+	button.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+	button.BackgroundTransparency = 0.8
+	button.BorderSizePixel = 0
+	button.Text = label
+	button.Font = Enum.Font.GothamBold
+	button.TextSize = 7
+	button.TextColor3 = Color3.fromRGB(255, 255, 255)
+	button.TextXAlignment = Enum.TextXAlignment.Center
+	button.ZIndex = 82
+	button.Parent = OptimizeScroll
+	AddText(button)
+	Instance.new("UICorner", button).CornerRadius = UDim.new(0, 5)
+	local stroke = Instance.new("UIStroke")
+	stroke.Name = "ControlOutline"
+	stroke.Color = Color3.fromRGB(0, 0, 0)
+	stroke.Thickness = 1
+	stroke.Transparency = 0.18
+	stroke.Parent = button
+	table.insert(ThemeObjects.Optimizer.Buttons, {Button = button, Kind = kind, Label = label})
+	return button
+end
+
+local optimizeY = 0
+local boostButton = CreateOptimizeOption("Boost", "FPS Boost", optimizeY)
+optimizeY += 24
+local optimizeOptions = {
+	{"LowGraphics", "Low Graphics"},
+	{"NoEffects", "No Effects"},
+	{"NoParticles", "No Particles"},
+	{"NoTextures", "No Textures"},
+	{"NoShadows", "No Shadows"},
+	{"SmoothParts", "Smooth Parts"},
+	{"HideClutter", "Hide Clutter"},
+	{"LowWater", "Low Water"},
+}
+for _, option in ipairs(optimizeOptions) do
+	local kind, label = option[1], option[2]
+	local button = CreateOptimizeOption(kind, label, optimizeY)
+	button.MouseButton1Click:Connect(function()
+		PlayClick()
+		SetOptimizerFeature(kind, not ThemeObjects.Optimizer.States[kind])
+	end)
+	optimizeY += 24
+end
+local restoreButton = CreateOptimizeOption("Restore", "Restore", optimizeY)
+OptimizeScroll.CanvasSize = UDim2.new(0, 0, 0, optimizeY + 24)
+
+boostButton.MouseButton1Click:Connect(function()
+	PlayClick()
+	ApplyFpsBoost()
+end)
+restoreButton.MouseButton1Click:Connect(function()
+	PlayClick()
+	RestoreOptimizer()
+end)
+if ThemeObjects.AddFeatureKeybind then
+	ThemeObjects.AddFeatureKeybind({Name = "Optimize FPS Boost", Storage = "OptimizeFPSBoost", Get = function() return LoadKeybind("OptimizeFPSBoost") end, Set = function(key) SaveKeybind("OptimizeFPSBoost", key) end, Action = ApplyFpsBoost})
+	ThemeObjects.AddFeatureKeybind({Name = "Optimize Restore", Storage = "OptimizeRestore", Get = function() return LoadKeybind("OptimizeRestore") end, Set = function(key) SaveKeybind("OptimizeRestore", key) end, Action = RestoreOptimizer})
+	for _, option in ipairs(optimizeOptions) do
+		local kind, label = option[1], option[2]
+		local storage = "Optimize" .. kind
+		ThemeObjects.AddFeatureKeybind({Name = "Optimize " .. label, Storage = storage, Get = function() return LoadKeybind(storage) end, Set = function(key) SaveKeybind(storage, key) end, Action = function()
+			SetOptimizerFeature(kind, not ThemeObjects.Optimizer.States[kind])
+		end})
+	end
+end
+OptimizeCloseBtn.MouseButton1Click:Connect(function()
+	PlayClick()
+	OptimizeFrame.Visible = false
+end)
+TrackConnection("OptimizerDescendantAdded", game.DescendantAdded:Connect(function(object)
+	if not OptimizerAnyEnabled() then return end
+	task.defer(function()
+		if object and object.Parent then
+			OptimizerApplyObject(object)
+		end
+	end)
+end))
+
+ThemeObjects.RestoreOptimizer = RestoreOptimizer
+ThemeObjects.OpenOptimizeDock = function()
+	if ThemeObjects.PickerDock then ThemeObjects.PickerDock.Visible = false end
+	if ThemeObjects.GuiSizeDock then ThemeObjects.GuiSizeDock.Visible = false end
+	if ThemeObjects.ThemeDock then ThemeObjects.ThemeDock.Visible = false end
+	if ThemeObjects.KeybindEditorFrame then ThemeObjects.KeybindEditorFrame.Visible = false end
+	if ThemeObjects.ConfirmClearFrame then ThemeObjects.ConfirmClearFrame.Visible = false end
+	OptimizeFrame.BackgroundColor3 = FrameThemeColor()
+	OptimizeScroll.ScrollBarImageColor3 = AccentColor()
+	RefreshOptimizeButtons()
+	OptimizeFrame.Visible = not OptimizeFrame.Visible
+	if OptimizeFrame.Visible and ThemeObjects.UpdateOptimizeDockPosition then
+		ThemeObjects.UpdateOptimizeDockPosition()
+	end
+	UpdateTheme(true)
+end
+
+RefreshOptimizeButtons()
+ThemeObjects.OpenOptimizeDock()

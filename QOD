@@ -1,0 +1,1058 @@
+-- Page-only module for Hqydeu Script Hub. Upload this file to its raw GitHub target.
+local Runtime = (type(getgenv) == "function" and getgenv().HqydeuLoader_Runtime) or shared.HqydeuLoader_Runtime
+if not Runtime then return warn("Hqydeu page module: main hub runtime was not found") end
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local function IsCurrentGamePage()
+	return ReplicatedStorage:FindFirstChild("AbilityEvent") ~= nil
+		or ReplicatedStorage:FindFirstChild("ResetCooldownEvent") ~= nil
+end
+
+local HubState = Runtime.HubState
+local ThemeObjects = Runtime.ThemeObjects
+local MainFrame = Runtime.MainFrame
+local Player = Runtime.Player
+local Players = Runtime.Players or game:GetService("Players")
+local RunService = Runtime.RunService or game:GetService("RunService")
+local SavedKeybinds = Runtime.SavedKeybinds or {}
+local AccentColor = Runtime.GetAccentColor and Runtime.GetAccentColor() or Color3.fromRGB(0, 210, 255)
+local FrameThemeColor = Runtime.GetFrameThemeColor and Runtime.GetFrameThemeColor() or Color3.fromRGB(28, 28, 38)
+local InactiveTextColor = Runtime.InactiveTextColor or function() return Color3.fromRGB(255, 255, 255) end
+local LoadKeybind = Runtime.LoadKeybind or function() return Enum.KeyCode.Unknown end
+local SaveKeybind = Runtime.SaveKeybind or function() end
+local LoadGameKeybind = Runtime.LoadGameKeybind or LoadKeybind
+local SaveGameKeybind = Runtime.SaveGameKeybind or SaveKeybind
+local SavePersistentSettings = Runtime.SavePersistentSettings or function() end
+local PlayClick = Runtime.PlayClick or function() end
+local PlaySwoosh = Runtime.PlaySwoosh or function() end
+local TrackConnection = Runtime.TrackConnection or function(name, connection) HubState.Connections[name] = connection; return connection end
+local UpdateTheme = Runtime.UpdateTheme or function() end
+if not HubState or not ThemeObjects or not MainFrame then return warn("Hqydeu page module: runtime is incomplete") end
+HubState.Connections = HubState.Connections or {}
+
+if MainFrame:FindFirstChild("QuietOrDiePage") and ThemeObjects.OpenQuietOrDiePage then
+	ThemeObjects.OpenQuietOrDiePage()
+	return
+end
+
+do
+	local quietPage = Instance.new("ScrollingFrame")
+	quietPage.Name = "QuietOrDiePage"
+	quietPage.Size = UDim2.new(0, 346, 1, -54)
+	quietPage.Position = UDim2.new(1.1, 0, 0, 54)
+	quietPage.BackgroundTransparency = 1
+	quietPage.BorderSizePixel = 0
+	quietPage.ClipsDescendants = true
+	quietPage.ScrollBarThickness = 3
+	quietPage.ScrollBarImageColor3 = AccentColor
+	quietPage.ScrollingDirection = Enum.ScrollingDirection.Y
+	quietPage.ElasticBehavior = Enum.ElasticBehavior.Never
+	quietPage.VerticalScrollBarInset = Enum.ScrollBarInset.ScrollBar
+	quietPage.CanvasSize = UDim2.new(0, 0, 0, 250)
+	quietPage.Visible = false
+	quietPage.Parent = MainFrame
+
+	local killRow = Instance.new("Frame")
+	killRow.Name = "QuietOrDieKillRow"
+	killRow.Size = UDim2.new(1, -8, 0, 38)
+	killRow.Position = UDim2.new(0, 4, 0, 74)
+	killRow.BackgroundColor3 = Color3.fromRGB(65, 65, 67)
+	killRow.BackgroundTransparency = 0.92
+	killRow.BorderSizePixel = 0
+	killRow.Parent = quietPage
+	table.insert(ThemeObjects.Backgrounds, killRow)
+	Instance.new("UICorner", killRow).CornerRadius = UDim.new(0, 6)
+
+	local killTitle = Instance.new("TextLabel")
+	killTitle.Size = UDim2.new(0, 82, 0, 24)
+	killTitle.Position = UDim2.new(0, 8, 0, 7)
+	killTitle.BackgroundTransparency = 1
+	killTitle.Text = "Auto Kill:"
+	killTitle.Font = Enum.Font.GothamBold
+	killTitle.TextSize = 11
+	killTitle.TextXAlignment = Enum.TextXAlignment.Left
+	killTitle.Parent = killRow
+	table.insert(ThemeObjects.Texts, killTitle)
+
+	local killToggle = Instance.new("TextButton")
+	killToggle.Size = UDim2.new(0, 38, 0, 22)
+	killToggle.Position = UDim2.new(1, -46, 0, 8)
+	killToggle.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+	killToggle.BackgroundTransparency = 0.8
+	killToggle.BorderSizePixel = 0
+	killToggle.Text = "Off"
+	killToggle.Font = Enum.Font.GothamBold
+	killToggle.TextSize = 9
+	killToggle.Parent = killRow
+	table.insert(ThemeObjects.Backgrounds, killToggle)
+	table.insert(ThemeObjects.Texts, killToggle)
+	Instance.new("UICorner", killToggle).CornerRadius = UDim.new(0, 5)
+
+	local farmRow = Instance.new("Frame")
+	farmRow.Name = "QuietOrDieFarmRow"
+	farmRow.Size = UDim2.new(1, -8, 0, 62)
+	farmRow.Position = UDim2.new(0, 4, 0, 4)
+	farmRow.BackgroundColor3 = Color3.fromRGB(65, 65, 67)
+	farmRow.BackgroundTransparency = 0.92
+	farmRow.BorderSizePixel = 0
+	farmRow.Parent = quietPage
+	table.insert(ThemeObjects.Backgrounds, farmRow)
+	Instance.new("UICorner", farmRow).CornerRadius = UDim.new(0, 6)
+
+	local farmTitle = Instance.new("TextLabel")
+	farmTitle.Size = UDim2.new(0, 130, 0, 24)
+	farmTitle.Position = UDim2.new(0, 12, 0, 7)
+	farmTitle.BackgroundTransparency = 1
+	farmTitle.Text = "Auto Farm:"
+	farmTitle.Font = Enum.Font.GothamBold
+	farmTitle.TextSize = 11
+	farmTitle.TextXAlignment = Enum.TextXAlignment.Left
+	farmTitle.Parent = farmRow
+	table.insert(ThemeObjects.Texts, farmTitle)
+
+	local farmToggle = Instance.new("TextButton")
+	farmToggle.Size = UDim2.new(0, 44, 0, 22)
+	farmToggle.Position = UDim2.new(1, -52, 0, 8)
+	farmToggle.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+	farmToggle.BackgroundTransparency = 0.8
+	farmToggle.BorderSizePixel = 0
+	farmToggle.Text = "Off"
+	farmToggle.Font = Enum.Font.GothamBold
+	farmToggle.TextSize = 9
+	farmToggle.Parent = farmRow
+	table.insert(ThemeObjects.Backgrounds, farmToggle)
+	table.insert(ThemeObjects.Texts, farmToggle)
+	Instance.new("UICorner", farmToggle).CornerRadius = UDim.new(0, 5)
+
+	local safePlaceToggle = Instance.new("TextButton")
+	safePlaceToggle.Size = UDim2.new(0, 140, 0, 17)
+	safePlaceToggle.Position = UDim2.new(1, -146, 0, 38)
+	safePlaceToggle.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+	safePlaceToggle.BackgroundTransparency = 0.8
+	safePlaceToggle.BorderSizePixel = 0
+	safePlaceToggle.Text = "Safe Space: Off"
+	safePlaceToggle.Font = Enum.Font.GothamBold
+	safePlaceToggle.TextSize = 8
+	safePlaceToggle.Parent = farmRow
+	table.insert(ThemeObjects.Backgrounds, safePlaceToggle)
+	table.insert(ThemeObjects.Texts, safePlaceToggle)
+	Instance.new("UICorner", safePlaceToggle).CornerRadius = UDim.new(0, 4)
+
+	local unclutterToggle = Instance.new("TextButton")
+	unclutterToggle.Size = UDim2.new(0, 44, 0, 22)
+	unclutterToggle.Position = UDim2.new(1, -146, 0, 8)
+	unclutterToggle.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+	unclutterToggle.BackgroundTransparency = 0.8
+	unclutterToggle.BorderSizePixel = 0
+	unclutterToggle.Text = "Mute"
+	unclutterToggle.Font = Enum.Font.GothamBold
+	unclutterToggle.TextSize = 7
+	unclutterToggle.Parent = farmRow
+	table.insert(ThemeObjects.Backgrounds, unclutterToggle)
+	table.insert(ThemeObjects.Texts, unclutterToggle)
+	Instance.new("UICorner", unclutterToggle).CornerRadius = UDim.new(0, 4)
+
+	local coinsDisplay = Instance.new("TextLabel")
+	coinsDisplay.Name = "QuietOrDieCoinsDisplay"
+	coinsDisplay.Size = UDim2.new(0, 120, 0, 9)
+	coinsDisplay.Position = UDim2.new(0.5, -58, 0, 0)
+	coinsDisplay.BackgroundTransparency = 1
+	coinsDisplay.Text = "Coins: 0"
+	coinsDisplay.Font = Enum.Font.GothamBold
+	coinsDisplay.TextSize = 8
+	coinsDisplay.TextXAlignment = Enum.TextXAlignment.Center
+	coinsDisplay.TextTruncate = Enum.TextTruncate.AtEnd
+	coinsDisplay.Visible = false
+	coinsDisplay.Parent = HubState.PageHeader
+	table.insert(ThemeObjects.Texts, coinsDisplay)
+
+	local sessionProfitDisplay = Instance.new("TextLabel")
+	sessionProfitDisplay.Name = "QuietOrDieSessionProfit"
+	sessionProfitDisplay.Size = UDim2.new(0, 40, 0, 9)
+	sessionProfitDisplay.Position = UDim2.new(1, 8, 0, 0)
+	sessionProfitDisplay.BackgroundTransparency = 1
+	sessionProfitDisplay.Text = "+0"
+	sessionProfitDisplay.Font = Enum.Font.GothamBold
+	sessionProfitDisplay.TextSize = 6
+	sessionProfitDisplay.TextXAlignment = Enum.TextXAlignment.Center
+	sessionProfitDisplay.TextColor3 = Color3.fromRGB(125, 255, 75)
+	sessionProfitDisplay.TextTruncate = Enum.TextTruncate.AtEnd
+	sessionProfitDisplay.Parent = coinsDisplay
+
+	local winsDisplay = Instance.new("TextLabel")
+	winsDisplay.Name = "QuietOrDieWinsDisplay"
+	winsDisplay.Size = UDim2.new(0, 120, 0, 9)
+	winsDisplay.Position = UDim2.new(0.5, -58, 0, 10)
+	winsDisplay.BackgroundTransparency = 1
+	winsDisplay.Text = "Wins: 0"
+	winsDisplay.Font = Enum.Font.GothamBold
+	winsDisplay.TextSize = 8
+	winsDisplay.TextXAlignment = Enum.TextXAlignment.Center
+	winsDisplay.TextColor3 = Color3.fromRGB(255, 255, 255)
+	winsDisplay.TextTruncate = Enum.TextTruncate.AtEnd
+	winsDisplay.Visible = false
+	winsDisplay.Parent = HubState.PageHeader
+	table.insert(ThemeObjects.Texts, winsDisplay)
+
+	local winsGainDisplay = Instance.new("TextLabel")
+	winsGainDisplay.Size = UDim2.new(0, 40, 0, 9)
+	winsGainDisplay.Position = UDim2.new(1, 8, 0, 0)
+	winsGainDisplay.BackgroundTransparency = 1
+	winsGainDisplay.Text = "+0"
+	winsGainDisplay.Font = Enum.Font.GothamBold
+	winsGainDisplay.TextSize = 6
+	winsGainDisplay.TextXAlignment = Enum.TextXAlignment.Center
+	winsGainDisplay.TextColor3 = Color3.fromRGB(255, 220, 65)
+	winsGainDisplay.Parent = winsDisplay
+
+	local historyButton = Instance.new("TextButton")
+	historyButton.Name = "QuietOrDieHistoryButton"
+	historyButton.Size = UDim2.new(0, 10, 0, 10)
+	historyButton.Position = UDim2.new(0, 72, 0, 4)
+	historyButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+	historyButton.BackgroundTransparency = 0.8
+	historyButton.BorderSizePixel = 0
+	historyButton.Text = "i"
+	historyButton.Font = Enum.Font.GothamBold
+	historyButton.TextSize = 7
+	historyButton.Visible = false
+	historyButton.Parent = HubState.PageHeader
+	table.insert(ThemeObjects.Backgrounds, historyButton)
+	table.insert(ThemeObjects.Texts, historyButton)
+	Instance.new("UICorner", historyButton).CornerRadius = UDim.new(1, 0)
+
+	local historyPanel = Instance.new("Frame")
+	historyPanel.Name = "QuietOrDieHistoryPanel"
+	historyPanel.Size = UDim2.new(0, 256, 0, 130)
+	historyPanel.Position = UDim2.new(0.5, -128, 0, 4)
+	historyPanel.BackgroundColor3 = Color3.fromRGB(48, 48, 52)
+	historyPanel.BackgroundTransparency = 0
+	historyPanel.BorderSizePixel = 0
+	historyPanel.Visible = false
+	historyPanel.ZIndex = 20
+	historyPanel.Parent = quietPage
+	table.insert(ThemeObjects.Backgrounds, historyPanel)
+	Instance.new("UICorner", historyPanel).CornerRadius = UDim.new(0, 9)
+	local historyStroke = Instance.new("UIStroke")
+	historyStroke.Color = AccentColor
+	historyStroke.Thickness = 1.5
+	historyStroke.Transparency = 0.08
+	historyStroke.Parent = historyPanel
+	table.insert(ThemeObjects.Accents, historyStroke)
+	local historyGradient = Instance.new("UIGradient")
+	historyGradient.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(42, 42, 48)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(24, 24, 30))
+	})
+	historyGradient.Rotation = 35
+	historyGradient.Parent = historyPanel
+
+	local historyTitle = Instance.new("TextLabel")
+	historyTitle.Size = UDim2.new(1, -16, 0, 14)
+	historyTitle.Position = UDim2.new(0, 8, 0, 6)
+	historyTitle.BackgroundTransparency = 1
+	historyTitle.Text = "Previous Runs"
+	historyTitle.Font = Enum.Font.GothamBold
+	historyTitle.TextSize = 10
+	historyTitle.TextXAlignment = Enum.TextXAlignment.Center
+	historyTitle.ZIndex = 21
+	historyTitle.Parent = historyPanel
+	table.insert(ThemeObjects.Texts, historyTitle)
+
+	local historyBest = Instance.new("TextLabel")
+	historyBest.Size = UDim2.new(1, -16, 0, 13)
+	historyBest.Position = UDim2.new(0, 8, 0, 22)
+	historyBest.BackgroundTransparency = 1
+	historyBest.Text = "Best  |  +0 Coins  |  +0 Wins"
+	historyBest.Font = Enum.Font.GothamBold
+	historyBest.TextSize = 8
+	historyBest.TextXAlignment = Enum.TextXAlignment.Center
+	historyBest.TextColor3 = Color3.fromRGB(255, 220, 65)
+	historyBest.ZIndex = 21
+	historyBest.Parent = historyPanel
+
+	local historyDivider = Instance.new("Frame")
+	historyDivider.Size = UDim2.new(0.72, 0, 0, 1)
+	historyDivider.AnchorPoint = Vector2.new(0.5, 0)
+	historyDivider.Position = UDim2.new(0.5, 0, 0, 38)
+	historyDivider.BackgroundColor3 = Color3.fromRGB(235, 235, 235)
+	historyDivider.BackgroundTransparency = 0.92
+	historyDivider.BorderSizePixel = 0
+	historyDivider.ZIndex = 21
+	historyDivider.Parent = historyPanel
+
+	local historyText = Instance.new("TextLabel")
+	historyText.Size = UDim2.new(1, -16, 0, 62)
+	historyText.Position = UDim2.new(0, 8, 0, 42)
+	historyText.BackgroundTransparency = 1
+	historyText.Text = "No execution history yet"
+	historyText.Font = Enum.Font.GothamMedium
+	historyText.TextSize = 8
+	historyText.TextXAlignment = Enum.TextXAlignment.Center
+	historyText.TextYAlignment = Enum.TextYAlignment.Top
+	historyText.ZIndex = 21
+	historyText.Parent = historyPanel
+	table.insert(ThemeObjects.Texts, historyText)
+
+	Instance.new("TextLabel", historyPanel).Name = "TotalLabel"
+	historyPanel.TotalLabel.Size = UDim2.new(1, -16, 0, 14)
+	historyPanel.TotalLabel.Position = UDim2.new(0, 8, 0, 110)
+	historyPanel.TotalLabel.BackgroundTransparency = 1
+	historyPanel.TotalLabel.Text = "Total  0 Coins  |  0 Wins"
+	historyPanel.TotalLabel.Font = Enum.Font.GothamMedium
+	historyPanel.TotalLabel.TextSize = 7
+	historyPanel.TotalLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	historyPanel.TotalLabel.TextXAlignment = Enum.TextXAlignment.Center
+	historyPanel.TotalLabel.RichText = true
+	historyPanel.TotalLabel.ZIndex = 21
+	historyPanel.TotalLabel.Parent = historyPanel
+
+	local eventRow = Instance.new("Frame")
+	eventRow.Name = "QuietOrDieEventRow"
+	eventRow.Size = UDim2.new(1, -8, 0, 38)
+	eventRow.Position = UDim2.new(0, 4, 0, 162)
+	eventRow.BackgroundColor3 = Color3.fromRGB(65, 65, 67)
+	eventRow.BackgroundTransparency = 0.92
+	eventRow.BorderSizePixel = 0
+	eventRow.Parent = quietPage
+	table.insert(ThemeObjects.Backgrounds, eventRow)
+	Instance.new("UICorner", eventRow).CornerRadius = UDim.new(0, 6)
+
+	local eventTitle = Instance.new("TextLabel")
+	eventTitle.Size = UDim2.new(0, 82, 0, 24)
+	eventTitle.Position = UDim2.new(0, 8, 0, 7)
+	eventTitle.BackgroundTransparency = 1
+	eventTitle.Text = "Auto Event:"
+	eventTitle.Font = Enum.Font.GothamBold
+	eventTitle.TextSize = 11
+	eventTitle.TextXAlignment = Enum.TextXAlignment.Left
+	eventTitle.Parent = eventRow
+	table.insert(ThemeObjects.Texts, eventTitle)
+
+	local eventToggle = Instance.new("TextButton")
+	eventToggle.Size = UDim2.new(0, 38, 0, 22)
+	eventToggle.Position = UDim2.new(1, -46, 0, 8)
+	eventToggle.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+	eventToggle.BackgroundTransparency = 0.8
+	eventToggle.BorderSizePixel = 0
+	eventToggle.Text = "Off"
+	eventToggle.Font = Enum.Font.GothamBold
+	eventToggle.TextSize = 9
+	eventToggle.Parent = eventRow
+	table.insert(ThemeObjects.Backgrounds, eventToggle)
+	table.insert(ThemeObjects.Texts, eventToggle)
+	Instance.new("UICorner", eventToggle).CornerRadius = UDim.new(0, 5)
+
+	local eventCountValue = Instance.new("TextLabel")
+	eventCountValue.Size = UDim2.new(0, 18, 0, 22)
+	eventCountValue.Position = UDim2.new(1, -164, 0, 8)
+	eventCountValue.BackgroundTransparency = 1
+	eventCountValue.Text = "0"
+	eventCountValue.Font = Enum.Font.GothamBold
+	eventCountValue.TextSize = 8
+	eventCountValue.TextXAlignment = Enum.TextXAlignment.Center
+	eventCountValue.Parent = eventRow
+	table.insert(ThemeObjects.Texts, eventCountValue)
+
+	local reviveRow = Instance.new("Frame")
+	reviveRow.Name = "QuietOrDieReviveRow"
+	reviveRow.Size = UDim2.new(1, -8, 0, 38)
+	reviveRow.Position = UDim2.new(0, 4, 0, 118)
+	reviveRow.BackgroundColor3 = Color3.fromRGB(65, 65, 67)
+	reviveRow.BackgroundTransparency = 0.92
+	reviveRow.BorderSizePixel = 0
+	reviveRow.Parent = quietPage
+	table.insert(ThemeObjects.Backgrounds, reviveRow)
+	Instance.new("UICorner", reviveRow).CornerRadius = UDim.new(0, 6)
+
+	local reviveTitle = Instance.new("TextLabel")
+	reviveTitle.Size = UDim2.new(0, 82, 0, 24)
+	reviveTitle.Position = UDim2.new(0, 8, 0, 7)
+	reviveTitle.BackgroundTransparency = 1
+	reviveTitle.Text = "Auto Revive:"
+	reviveTitle.Font = Enum.Font.GothamBold
+	reviveTitle.TextSize = 11
+	reviveTitle.TextXAlignment = Enum.TextXAlignment.Left
+	reviveTitle.Parent = reviveRow
+	table.insert(ThemeObjects.Texts, reviveTitle)
+
+	local reviveToggle = Instance.new("TextButton")
+	reviveToggle.Size = UDim2.new(0, 38, 0, 22)
+	reviveToggle.Position = UDim2.new(1, -46, 0, 8)
+	reviveToggle.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+	reviveToggle.BackgroundTransparency = 0.8
+	reviveToggle.BorderSizePixel = 0
+	reviveToggle.Text = "Off"
+	reviveToggle.Font = Enum.Font.GothamBold
+	reviveToggle.TextSize = 9
+	reviveToggle.Parent = reviveRow
+	table.insert(ThemeObjects.Backgrounds, reviveToggle)
+	table.insert(ThemeObjects.Texts, reviveToggle)
+	Instance.new("UICorner", reviveToggle).CornerRadius = UDim.new(0, 5)
+
+	local reviveCountValue = Instance.new("TextLabel")
+	reviveCountValue.Size = UDim2.new(0, 18, 0, 22)
+	reviveCountValue.Position = UDim2.new(1, -164, 0, 8)
+	reviveCountValue.BackgroundTransparency = 1
+	reviveCountValue.Text = "0"
+	reviveCountValue.Font = Enum.Font.GothamBold
+	reviveCountValue.TextSize = 8
+	reviveCountValue.TextXAlignment = Enum.TextXAlignment.Center
+	reviveCountValue.Parent = reviveRow
+	table.insert(ThemeObjects.Texts, reviveCountValue)
+
+	ThemeObjects.QODReveal = {Enabled = false, LastFire = 0}
+	ThemeObjects.QODReveal.Row = Instance.new("Frame")
+	ThemeObjects.QODReveal.Row.Name = "QuietOrDieRevealRow"
+	ThemeObjects.QODReveal.Row.Size = UDim2.new(1, -8, 0, 38)
+	ThemeObjects.QODReveal.Row.Position = UDim2.new(0, 4, 0, 250)
+	ThemeObjects.QODReveal.Row.BackgroundColor3 = Color3.fromRGB(65, 65, 67)
+	ThemeObjects.QODReveal.Row.BackgroundTransparency = 0.92
+	ThemeObjects.QODReveal.Row.BorderSizePixel = 0
+	ThemeObjects.QODReveal.Row.Parent = quietPage
+	ThemeObjects.QODReveal.Row.Visible = false -- The rebuilt regular ESP replaces Auto Reveal.
+	table.insert(ThemeObjects.Backgrounds, ThemeObjects.QODReveal.Row)
+	Instance.new("UICorner", ThemeObjects.QODReveal.Row).CornerRadius = UDim.new(0, 6)
+
+	ThemeObjects.QODReveal.Title = Instance.new("TextLabel")
+	ThemeObjects.QODReveal.Title.Size = UDim2.new(0, 150, 0, 24)
+	ThemeObjects.QODReveal.Title.Position = UDim2.new(0, 12, 0, 7)
+	ThemeObjects.QODReveal.Title.BackgroundTransparency = 1
+	ThemeObjects.QODReveal.Title.Text = "Auto Reveal:"
+	ThemeObjects.QODReveal.Title.Font = Enum.Font.GothamBold
+	ThemeObjects.QODReveal.Title.TextSize = 11
+	ThemeObjects.QODReveal.Title.TextXAlignment = Enum.TextXAlignment.Left
+	ThemeObjects.QODReveal.Title.Parent = ThemeObjects.QODReveal.Row
+	table.insert(ThemeObjects.Texts, ThemeObjects.QODReveal.Title)
+
+	ThemeObjects.QODReveal.Toggle = Instance.new("TextButton")
+	ThemeObjects.QODReveal.Toggle.Size = UDim2.new(0, 44, 0, 22)
+	ThemeObjects.QODReveal.Toggle.Position = UDim2.new(1, -52, 0, 8)
+	ThemeObjects.QODReveal.Toggle.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+	ThemeObjects.QODReveal.Toggle.BackgroundTransparency = 0.8
+	ThemeObjects.QODReveal.Toggle.BorderSizePixel = 0
+	ThemeObjects.QODReveal.Toggle.Text = "Off"
+	ThemeObjects.QODReveal.Toggle.Font = Enum.Font.GothamBold
+	ThemeObjects.QODReveal.Toggle.TextSize = 9
+	ThemeObjects.QODReveal.Toggle.Parent = ThemeObjects.QODReveal.Row
+	table.insert(ThemeObjects.Backgrounds, ThemeObjects.QODReveal.Toggle)
+	table.insert(ThemeObjects.Texts, ThemeObjects.QODReveal.Toggle)
+	Instance.new("UICorner", ThemeObjects.QODReveal.Toggle).CornerRadius = UDim.new(0, 5)
+	table.insert(ThemeObjects.StateTexts, {Object = ThemeObjects.QODReveal.Title, IsEnabled = function() return ThemeObjects.QODReveal.Enabled end})
+
+	ThemeObjects.QODReveal.Toggle.MouseButton1Click:Connect(function()
+		PlayClick()
+		ThemeObjects.QODReveal.Enabled = not ThemeObjects.QODReveal.Enabled
+		ThemeObjects.QODReveal.LastFire = 0
+		ThemeObjects.QODReveal.Toggle.Text = ThemeObjects.QODReveal.Enabled and "On" or "Off"
+		ThemeObjects.QODReveal.Title.TextColor3 = ThemeObjects.QODReveal.Enabled and AccentColor or InactiveTextColor()
+		if ThemeObjects.QODReveal.Enabled then
+			if ThemeObjects.DisableRegularESP then ThemeObjects.DisableRegularESP()
+			else HubState.ESPEnabled = false end
+		end
+	end)
+
+	local killState = {Enabled = false, TargetIndex = 0, LastAttack = 0}
+	local farmState = {Enabled = false, SafePlace = false, MuteAudio = false, MutedSounds = {}, AudioConnections = {}, LastCoins = nil, ExecutionGain = 0, LastWins = nil, ExecutionWins = 0, LastEmote = 0, TauntBurst = 3, TauntDelay = 0.02, DroppedCharacter = nil, SurvivorSince = 0}
+	local eventState = {Enabled = false, LastMove = 0, Current = nil, Started = 0, Skipped = {}}
+	local reviveState = {Enabled = false, LastCheck = 0, Triggered = {}}
+	local coinsDisplayState = {LastUpdate = 0, LastHistorySave = os.clock(), HistoryDirty = false}
+	local function FormatWholeNumber(value)
+		local formatted = tostring(math.floor(tonumber(value) or 0))
+		while true do
+			local replacements
+			formatted, replacements = formatted:gsub("^(-?%d+)(%d%d%d)", "%1,%2")
+			if replacements == 0 then break end
+		end
+		return formatted
+	end
+	local function FormatCompactNumber(value)
+		value = math.max(0, math.floor(tonumber(value) or 0))
+		local divisor, suffix = 1, ""
+		if value >= 1000000000 then divisor, suffix = 1000000000, "B"
+		elseif value >= 1000000 then divisor, suffix = 1000000, "M"
+		elseif value >= 1000 then divisor, suffix = 1000, "K"
+		else return tostring(value) end
+		local scaled = value / divisor
+		local formatted = scaled >= 100 and string.format("%.0f", scaled) or string.format("%.1f", scaled)
+		formatted = formatted:gsub("%.0$", "")
+		return formatted .. suffix
+	end
+
+	local executionHistory = type(SavedKeybinds.QODOnlyExecutionHistory) == "table" and SavedKeybinds.QODOnlyExecutionHistory or {}
+	farmState.AllTime = type(SavedKeybinds.QODAllTimeStats) == "table" and SavedKeybinds.QODAllTimeStats or {Coins = 0, Wins = 0, BestCoins = 0, BestWins = 0}
+	farmState.AllTime.Coins = tonumber(farmState.AllTime.Coins) or 0
+	farmState.AllTime.Wins = tonumber(farmState.AllTime.Wins) or 0
+	farmState.AllTime.BestCoins = tonumber(farmState.AllTime.BestCoins) or 0
+	farmState.AllTime.BestWins = tonumber(farmState.AllTime.BestWins) or 0
+	if type(SavedKeybinds.QODAllTimeStats) ~= "table" then
+		for _, entry in ipairs(executionHistory) do
+			farmState.AllTime.Coins = farmState.AllTime.Coins + (tonumber(entry.Coins) or 0)
+			farmState.AllTime.Wins = farmState.AllTime.Wins + (tonumber(entry.Wins) or 0)
+			if (tonumber(entry.Coins) or 0) > farmState.AllTime.BestCoins
+				or ((tonumber(entry.Coins) or 0) == farmState.AllTime.BestCoins and (tonumber(entry.Wins) or 0) > farmState.AllTime.BestWins) then
+				farmState.AllTime.BestCoins = tonumber(entry.Coins) or 0
+				farmState.AllTime.BestWins = tonumber(entry.Wins) or 0
+			end
+		end
+	end
+	local currentExecution = nil
+	SavedKeybinds.QODOnlyExecutionHistory = executionHistory
+	SavedKeybinds.QODAllTimeStats = farmState.AllTime
+	SavePersistentSettings()
+
+	local function RefreshExecutionHistory()
+		local lines = {}
+		local bestEntry = {Coins = farmState.AllTime.BestCoins, Wins = farmState.AllTime.BestWins}
+		historyBest.Text = string.format("Best  |  +%s Coins  |  +%s Wins", FormatCompactNumber(bestEntry.Coins or 0), FormatCompactNumber(bestEntry.Wins or 0))
+		for index, entry in ipairs(executionHistory) do
+			local useNumber = #executionHistory - index + 1
+			table.insert(lines, string.format("%d.  +%s Coins   |   +%s Wins", useNumber, FormatCompactNumber(entry.Coins or 0), FormatCompactNumber(entry.Wins or 0)))
+		end
+		historyText.Text = table.concat(lines, "\n")
+		historyPanel.TotalLabel.Text = string.format('Total  <font color="#7DFF4B">%s Coins</font>  |  <font color="#FFDC41">%s Wins</font>', FormatCompactNumber(farmState.AllTime.Coins), FormatCompactNumber(farmState.AllTime.Wins))
+	end
+	RefreshExecutionHistory()
+	ThemeObjects.FlushQuietHistory = function()
+		if not coinsDisplayState.HistoryDirty then return end
+		SavedKeybinds.QODOnlyExecutionHistory = executionHistory
+		SavedKeybinds.QODAllTimeStats = farmState.AllTime
+		SavePersistentSettings()
+		coinsDisplayState.HistoryDirty = false
+		coinsDisplayState.LastHistorySave = os.clock()
+	end
+	historyButton.MouseButton1Click:Connect(function()
+		PlayClick()
+		historyPanel.Visible = not historyPanel.Visible
+		if historyPanel.Visible then RefreshExecutionHistory() end
+	end)
+
+	HubState.Connections.QuietOrDieCoinsDisplay = RunService.Heartbeat:Connect(function()
+		if os.clock() - coinsDisplayState.LastUpdate < 0.2 then return end
+		coinsDisplayState.LastUpdate = os.clock()
+		local playerGui = Player:FindFirstChildOfClass("PlayerGui")
+		local isQuietOrDie = ReplicatedStorage:FindFirstChild("AbilityEvent") ~= nil
+			and playerGui ~= nil and playerGui:FindFirstChild("InGameGui") ~= nil
+		if not isQuietOrDie then
+			coinsDisplay.Text = "Coins: N/A"
+			sessionProfitDisplay.Text = "N/A"
+			winsDisplay.Text = "Wins: N/A"
+			winsGainDisplay.Text = "N/A"
+			return
+		end
+		if not currentExecution then
+			currentExecution = {Coins = 0, Wins = 0, Game = "QuietOrDie"}
+			table.insert(executionHistory, 1, currentExecution)
+			while #executionHistory > 5 do table.remove(executionHistory) end
+			SavedKeybinds.QODOnlyExecutionHistory = executionHistory
+			SavePersistentSettings()
+			RefreshExecutionHistory()
+		end
+		local leaderstats = Player:FindFirstChild("leaderstats")
+		local coins = leaderstats and leaderstats:FindFirstChild("Coins")
+		local wins = leaderstats and leaderstats:FindFirstChild("Wins")
+		coinsDisplay.Text = coins and ("Coins: " .. FormatWholeNumber(coins.Value)) or "Coins: N/A"
+		if coins then
+			local currentCoins = math.floor(tonumber(coins.Value) or 0)
+			if farmState.LastCoins ~= nil and currentCoins > farmState.LastCoins then
+				local earnedCoins = currentCoins - farmState.LastCoins
+				farmState.ExecutionGain = farmState.ExecutionGain + earnedCoins
+				farmState.AllTime.Coins = farmState.AllTime.Coins + earnedCoins
+			end
+			farmState.LastCoins = currentCoins
+		end
+		sessionProfitDisplay.Text = coins and ("+" .. FormatCompactNumber(farmState.ExecutionGain)) or "N/A"
+		winsDisplay.Text = wins and ("Wins: " .. FormatWholeNumber(wins.Value)) or "Wins: N/A"
+		if wins then
+			local currentWins = math.floor(tonumber(wins.Value) or 0)
+			if farmState.LastWins ~= nil and currentWins > farmState.LastWins then
+				local earnedWins = currentWins - farmState.LastWins
+				farmState.ExecutionWins = farmState.ExecutionWins + earnedWins
+				farmState.AllTime.Wins = farmState.AllTime.Wins + earnedWins
+			end
+			farmState.LastWins = currentWins
+		end
+		winsGainDisplay.Text = wins and ("+" .. FormatCompactNumber(farmState.ExecutionWins)) or "N/A"
+		if currentExecution.Coins ~= farmState.ExecutionGain or currentExecution.Wins ~= farmState.ExecutionWins then
+			currentExecution.Coins = farmState.ExecutionGain
+			currentExecution.Wins = farmState.ExecutionWins
+			if currentExecution.Coins > farmState.AllTime.BestCoins
+				or (currentExecution.Coins == farmState.AllTime.BestCoins and currentExecution.Wins > farmState.AllTime.BestWins) then
+				farmState.AllTime.BestCoins = currentExecution.Coins
+				farmState.AllTime.BestWins = currentExecution.Wins
+			end
+			coinsDisplayState.HistoryDirty = true
+			if historyPanel.Visible then RefreshExecutionHistory() end
+		end
+		if coinsDisplayState.HistoryDirty and os.clock() - coinsDisplayState.LastHistorySave >= 5 then
+			ThemeObjects.FlushQuietHistory()
+		end
+	end)
+	killToggle.MouseButton1Click:Connect(function()
+		PlayClick()
+		killState.Enabled = not killState.Enabled
+		killToggle.Text = killState.Enabled and "On" or "Off"
+		killTitle.TextColor3 = killState.Enabled and AccentColor or InactiveTextColor()
+	end)
+	table.insert(ThemeObjects.StateTexts, {Object = killTitle, IsEnabled = function() return killState.Enabled end})
+	ThemeObjects.AddFeatureKeybind({Name = "Auto Kill", Storage = "QODAutoKill", Parent = killRow, Toggle = killToggle, Get = function() return LoadGameKeybind("QODAutoKill") end, Set = function(key) SaveGameKeybind("QODAutoKill", key) end, Action = function()
+		killState.Enabled = not killState.Enabled
+		killToggle.Text = killState.Enabled and "On" or "Off"
+		killTitle.TextColor3 = killState.Enabled and AccentColor or InactiveTextColor()
+	end})
+	reviveToggle.MouseButton1Click:Connect(function()
+		PlayClick()
+		reviveState.Enabled = not reviveState.Enabled
+		reviveToggle.Text = reviveState.Enabled and "On" or "Off"
+		reviveTitle.TextColor3 = reviveState.Enabled and AccentColor or InactiveTextColor()
+	end)
+	table.insert(ThemeObjects.StateTexts, {Object = reviveTitle, IsEnabled = function() return reviveState.Enabled end})
+	ThemeObjects.AddFeatureKeybind({Name = "Auto Revive", Storage = "QODAutoRevive", Parent = reviveRow, Toggle = reviveToggle, Get = function() return LoadGameKeybind("QODAutoRevive") end, Set = function(key) SaveGameKeybind("QODAutoRevive", key) end, Action = function()
+		reviveState.Enabled = not reviveState.Enabled
+		reviveState.Triggered = {}
+		reviveToggle.Text = reviveState.Enabled and "On" or "Off"
+		reviveTitle.TextColor3 = reviveState.Enabled and AccentColor or InactiveTextColor()
+	end})
+
+	farmToggle.MouseButton1Click:Connect(function()
+		PlayClick()
+		farmState.Enabled = not farmState.Enabled
+		if farmState.Enabled and eventState.Enabled and farmState.SafePlace then
+			eventState.Enabled = false
+			eventToggle.Text = "Off"
+			eventTitle.TextColor3 = InactiveTextColor()
+		end
+		farmState.DroppedCharacter = nil
+		farmState.SurvivorSince = 0
+		if farmState.Enabled then
+			farmState.LastEmote = 0
+		end
+		farmToggle.Text = farmState.Enabled and "On" or "Off"
+		farmTitle.TextColor3 = farmState.Enabled and AccentColor or InactiveTextColor()
+	end)
+	table.insert(ThemeObjects.StateTexts, {Object = farmTitle, IsEnabled = function() return farmState.Enabled end})
+	ThemeObjects.AddFeatureKeybind({Name = "Auto Farm", Storage = "QODAutoFarm", Parent = farmRow, Toggle = farmToggle, Get = function() return LoadGameKeybind("QODAutoFarm") end, Set = function(key) SaveGameKeybind("QODAutoFarm", key) end, Action = function()
+		farmState.Enabled = not farmState.Enabled
+		if farmState.Enabled and eventState.Enabled and farmState.SafePlace then
+			eventState.Enabled = false
+			eventToggle.Text = "Off"
+			eventTitle.TextColor3 = InactiveTextColor()
+		end
+		farmState.DroppedCharacter = nil
+		farmState.SurvivorSince = 0
+		if farmState.Enabled then farmState.LastEmote = 0 end
+		farmToggle.Text = farmState.Enabled and "On" or "Off"
+		farmTitle.TextColor3 = farmState.Enabled and AccentColor or InactiveTextColor()
+	end})
+
+	safePlaceToggle.MouseButton1Click:Connect(function()
+		PlayClick()
+		farmState.SafePlace = not farmState.SafePlace
+		farmState.DroppedCharacter = nil
+		if farmState.SafePlace and farmState.Enabled and eventState.Enabled then
+			eventState.Enabled = false
+			eventToggle.Text = "Off"
+			eventTitle.TextColor3 = InactiveTextColor()
+		end
+		safePlaceToggle.Text = farmState.SafePlace and "Safe Space: On" or "Safe Space: Off"
+		safePlaceToggle.TextColor3 = farmState.SafePlace and AccentColor or InactiveTextColor()
+	end)
+	table.insert(ThemeObjects.StateTexts, {Object = safePlaceToggle, IsEnabled = function() return farmState.SafePlace end})
+
+	unclutterToggle.MouseButton1Click:Connect(function()
+		PlayClick()
+		farmState.MuteAudio = not farmState.MuteAudio
+		unclutterToggle.Text = farmState.MuteAudio and "Unmute" or "Mute"
+		unclutterToggle.TextColor3 = farmState.MuteAudio and AccentColor or InactiveTextColor()
+		if farmState.SetUnclutter then farmState.SetUnclutter(farmState.MuteAudio) end
+	end)
+	table.insert(ThemeObjects.StateTexts, {Object = unclutterToggle, Name = "Mute", IsEnabled = function() return farmState.MuteAudio end})
+
+	eventToggle.MouseButton1Click:Connect(function()
+		PlayClick()
+		eventState.Enabled = not eventState.Enabled
+		if eventState.Enabled and farmState.Enabled and farmState.SafePlace then
+			farmState.Enabled = false
+			farmToggle.Text = "Off"
+			farmTitle.TextColor3 = InactiveTextColor()
+		end
+		eventState.Current = nil
+		eventState.Started = 0
+		eventToggle.Text = eventState.Enabled and "On" or "Off"
+		eventTitle.TextColor3 = eventState.Enabled and AccentColor or InactiveTextColor()
+	end)
+	table.insert(ThemeObjects.StateTexts, {Object = eventTitle, IsEnabled = function() return eventState.Enabled end})
+	ThemeObjects.AddFeatureKeybind({Name = "Auto Event", Storage = "QODAutoEvent", Parent = eventRow, Toggle = eventToggle, Get = function() return LoadGameKeybind("QODAutoEvent") end, Set = function(key) SaveGameKeybind("QODAutoEvent", key) end, Action = function()
+		eventState.Enabled = not eventState.Enabled
+		if eventState.Enabled and farmState.Enabled and farmState.SafePlace then
+			farmState.Enabled = false
+			farmToggle.Text = "Off"
+			farmTitle.TextColor3 = InactiveTextColor()
+		end
+		eventState.Current = nil
+		eventState.Started = 0
+		eventToggle.Text = eventState.Enabled and "On" or "Off"
+		eventTitle.TextColor3 = eventState.Enabled and AccentColor or InactiveTextColor()
+	end})
+
+	local function IsQuietOrDieSurvivor()
+		local playerGui = Player:FindFirstChildOfClass("PlayerGui")
+		local inGameGui = playerGui and playerGui:FindFirstChild("InGameGui")
+		local playerFrame = inGameGui and inGameGui:FindFirstChild("PlayerFrameGame")
+		local survivorVisible = playerFrame ~= nil and playerFrame.Visible and Player:FindFirstChild("InHit") == nil
+		if not survivorVisible then
+			farmState.SurvivorSince = 0
+			return false
+		end
+		if farmState.SurvivorSince == 0 then
+			farmState.SurvivorSince = os.clock()
+			return false
+		end
+		return os.clock() - farmState.SurvivorSince >= 0.05
+	end
+
+	local function IsQuietOrDieKiller()
+		local killerFolder = workspace:FindFirstChild("KillerFolder")
+		if killerFolder and killerFolder:FindFirstChild(Player.Name) then return true end
+		local function containerSaysKiller(container)
+			if not container then return false end
+			for _, attributeName in ipairs({"Role", "CurrentRole", "RoundRole"}) do
+				local value = container:GetAttribute(attributeName)
+				if type(value) == "string" and value:lower():find("killer", 1, true) then return true end
+			end
+			for _, attributeName in ipairs({"IsKiller", "Killer"}) do
+				if container:GetAttribute(attributeName) == true then return true end
+			end
+			for _, valueName in ipairs({"Role", "CurrentRole", "RoundRole"}) do
+				local valueObject = container:FindFirstChild(valueName)
+				if valueObject and valueObject:IsA("StringValue") and valueObject.Value:lower():find("killer", 1, true) then return true end
+			end
+			for _, valueName in ipairs({"IsKiller", "Killer"}) do
+				local valueObject = container:FindFirstChild(valueName)
+				if valueObject and valueObject:IsA("BoolValue") and valueObject.Value then return true end
+			end
+			return false
+		end
+
+		if containerSaysKiller(Player) or containerSaysKiller(Player.Character) then return true end
+		if Player.Team and Player.Team.Name:lower():find("killer", 1, true) then return true end
+		local playerGui = Player:FindFirstChildOfClass("PlayerGui")
+		local inGameGui = playerGui and playerGui:FindFirstChild("InGameGui")
+		if inGameGui then
+			for _, frameName in ipairs({"KillerFrameGame2", "KillerFrameGame", "KillerFrame", "KillerGui"}) do
+				local frame = inGameGui:FindFirstChild(frameName, true)
+				if frame and frame:IsA("GuiObject") and frame.Visible then return true end
+			end
+		end
+		return false
+	end
+
+	HubState.Connections.QuietOrDieStatus = RunService.Heartbeat:Connect(function()
+		if os.clock() - (coinsDisplayState.LastStatusUpdate or 0) < 0.25 then return end
+		coinsDisplayState.LastStatusUpdate = os.clock()
+
+		local eventCount = 0
+		local eventFolder = workspace:FindFirstChild("EventSpawns")
+		if eventFolder then
+			for _, item in ipairs(eventFolder:GetChildren()) do
+				if item.Name:match("^EventItem%d+$") then eventCount = eventCount + 1 end
+			end
+		end
+
+		local reviveCount = 0
+		local playersFolder = workspace:FindFirstChild("PlayersFolder")
+		if playersFolder then
+			for _, targetCharacter in ipairs(playersFolder:GetChildren()) do
+				if targetCharacter:IsA("Model") and targetCharacter ~= Player.Character then
+					local prompt = targetCharacter:FindFirstChild("RevivePrompt", true)
+					if prompt and prompt:IsA("ProximityPrompt") and prompt.Enabled then reviveCount = reviveCount + 1 end
+				end
+			end
+		end
+
+		eventCountValue.Text = tostring(eventCount)
+		reviveCountValue.Text = tostring(reviveCount)
+		eventCountValue.TextColor3 = eventCount > 0 and AccentColor or InactiveTextColor()
+		reviveCountValue.TextColor3 = reviveCount > 0 and AccentColor or InactiveTextColor()
+	end)
+
+	HubState.Connections.QuietOrDieAutoReveal = RunService.Heartbeat:Connect(function()
+		if not ThemeObjects.QODReveal.Enabled then return end
+		if ThemeObjects.QODReveal.LastFire ~= 0 and os.clock() - ThemeObjects.QODReveal.LastFire < 0.5 then return end
+		local playerGui = Player:FindFirstChildOfClass("PlayerGui")
+		local inGameGui = playerGui and playerGui:FindFirstChild("InGameGui")
+		local killerFrame = inGameGui and inGameGui:FindFirstChild("KillerFrameGame2")
+		if killerFrame and killerFrame.Visible then
+			pcall(function()
+				local virtualInput = game:GetService("VirtualInputManager")
+				virtualInput:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+				task.delay(0.03, function()
+					pcall(function() virtualInput:SendKeyEvent(false, Enum.KeyCode.E, false, game) end)
+				end)
+			end)
+		end
+		local abilityEvent = ReplicatedStorage:FindFirstChild("AbilityEvent")
+		if not abilityEvent or not abilityEvent:IsA("RemoteEvent") then return end
+		if pcall(function() abilityEvent:FireServer(3) end) then
+			ThemeObjects.QODReveal.LastFire = os.clock()
+		end
+	end)
+
+	HubState.Connections.QuietOrDieAutoRevive = RunService.Heartbeat:Connect(function()
+		if not reviveState.Enabled or os.clock() - reviveState.LastCheck < 0.01 then return end
+		reviveState.LastCheck = os.clock()
+		local playersFolder = workspace:FindFirstChild("PlayersFolder")
+		local character = Player.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if not playersFolder or not humanoid or humanoid.Health <= 0 then return end
+
+		local now = os.clock()
+		for prompt, lastTriggered in pairs(reviveState.Triggered) do
+			if not prompt.Parent or now - lastTriggered > 0.5 then reviveState.Triggered[prompt] = nil end
+		end
+		for _, targetCharacter in ipairs(playersFolder:GetChildren()) do
+			if targetCharacter ~= character and targetCharacter:IsA("Model") then
+				local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
+				local attachment = targetRoot and targetRoot:FindFirstChild("ReviveAttachment")
+					or targetCharacter:FindFirstChild("ReviveAttachment", true)
+				local prompt = attachment and attachment:FindFirstChild("RevivePrompt", true)
+				if prompt and prompt:IsA("ProximityPrompt") and prompt.Enabled
+					and (not reviveState.Triggered[prompt] or now - reviveState.Triggered[prompt] >= 0.02) then
+					reviveState.Triggered[prompt] = now
+					if type(fireproximityprompt) == "function" then
+						local originalHoldDuration = prompt.HoldDuration
+						local originalRequiresLineOfSight = prompt.RequiresLineOfSight
+						pcall(function()
+							prompt.HoldDuration = 0
+							prompt.RequiresLineOfSight = false
+						end)
+						pcall(function() fireproximityprompt(prompt) end)
+						task.delay(0.05, function()
+							if prompt and prompt.Parent then
+								pcall(function()
+									prompt.HoldDuration = originalHoldDuration
+									prompt.RequiresLineOfSight = originalRequiresLineOfSight
+								end)
+							end
+						end)
+					end
+				end
+			end
+		end
+	end)
+
+	HubState.Connections.QuietOrDieAutoKill = RunService.Heartbeat:Connect(function()
+		if not killState.Enabled or os.clock() - killState.LastAttack < 0.1 or not IsQuietOrDieKiller() then return end
+		local character = Player.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		local playersFolder = workspace:FindFirstChild("PlayersFolder")
+		local attackRemote = ReplicatedStorage:FindFirstChild("PlayerTouchedOrClicked")
+		if not humanoid or humanoid.Health <= 0 or not root or not playersFolder or not attackRemote or not attackRemote:IsA("RemoteEvent") then return end
+
+		local targets = {}
+		for _, targetPlayer in ipairs(Players:GetPlayers()) do
+			if targetPlayer ~= Player and playersFolder:FindFirstChild(targetPlayer.Name) then
+				local targetCharacter = targetPlayer.Character
+				local targetHumanoid = targetCharacter and targetCharacter:FindFirstChildOfClass("Humanoid")
+				local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
+				if targetHumanoid and targetHumanoid.Health > 0 and targetRoot then table.insert(targets, targetRoot) end
+			end
+		end
+		if #targets == 0 then return end
+
+		killState.TargetIndex = (killState.TargetIndex % #targets) + 1
+		local targetRoot = targets[killState.TargetIndex]
+		root.CFrame = targetRoot.CFrame * CFrame.new(0, 0, 2)
+		root.AssemblyLinearVelocity = Vector3.zero
+		killState.LastAttack = os.clock()
+		pcall(function() attackRemote:FireServer() end)
+	end)
+
+	local function MuteQuietOrDieSound(sound)
+		if not farmState.MuteAudio or not sound or not sound:IsA("Sound") then return end
+		if farmState.MutedSounds[sound] == nil then farmState.MutedSounds[sound] = sound.Volume end
+		sound.Volume = 0
+	end
+
+	farmState.SetAudioMuted = function(enabled)
+		for _, connection in ipairs(farmState.AudioConnections) do connection:Disconnect() end
+		farmState.AudioConnections = {}
+		if not enabled then
+			for sound, originalVolume in pairs(farmState.MutedSounds) do
+				if sound and sound.Parent then sound.Volume = originalVolume end
+			end
+			farmState.MutedSounds = {}
+			return
+		end
+
+		local pendingSounds = {}
+		local processing = false
+		local function queueSound(sound)
+			if sound and sound:IsA("Sound") then table.insert(pendingSounds, sound) end
+			if processing then return end
+			processing = true
+			task.spawn(function()
+				while #pendingSounds > 0 and farmState.MuteAudio do
+					for _ = 1, 8 do
+						local nextSound = table.remove(pendingSounds, 1)
+						if not nextSound then break end
+						MuteQuietOrDieSound(nextSound)
+					end
+					task.wait()
+				end
+				processing = false
+			end)
+		end
+		local function watchRoot(rootObject, scanExisting)
+			if not rootObject then return end
+			if rootObject:IsA("Sound") then queueSound(rootObject) end
+			if scanExisting then
+				task.spawn(function()
+					local stack = rootObject:GetChildren()
+					local scanned = 0
+					while #stack > 0 and farmState.MuteAudio do
+						local object = table.remove(stack)
+						if not farmState.MuteAudio then break end
+						if object:IsA("Sound") then queueSound(object) end
+						for _, child in ipairs(object:GetChildren()) do
+							table.insert(stack, child)
+						end
+						scanned = scanned + 1
+						if scanned % 60 == 0 then task.wait() end
+					end
+				end)
+			end
+			table.insert(farmState.AudioConnections, rootObject.DescendantAdded:Connect(function(object)
+				if object:IsA("Sound") then queueSound(object) end
+			end))
+		end
+
+		local roots = {Player:FindFirstChild("Emote"), Player.Character, Player:FindFirstChildOfClass("PlayerGui"), workspace.CurrentCamera, game:GetService("SoundService"), workspace}
+		for _, rootObject in ipairs(roots) do
+			watchRoot(rootObject, true)
+		end
+		table.insert(farmState.AudioConnections, Player.ChildAdded:Connect(function(object)
+			if object.Name == "Emote" then
+				watchRoot(object, true)
+			end
+		end))
+		table.insert(farmState.AudioConnections, Player.CharacterAdded:Connect(function(character)
+			watchRoot(character, true)
+		end))
+	end
+
+	farmState.SetUnclutter = function(enabled)
+		farmState.SetAudioMuted(enabled)
+	end
+	ThemeObjects.RestoreQuietClutter = function() farmState.SetUnclutter(false) end
+
+	local function TriggerQuietOrDieTaunt()
+		local abilityEvent = ReplicatedStorage:FindFirstChild("AbilityEvent")
+		if not abilityEvent or not abilityEvent:IsA("RemoteEvent") then return false end
+		local fired = pcall(function() abilityEvent:FireServer(1) end)
+		return fired
+	end
+
+	local resetCooldownEvent = ReplicatedStorage:FindFirstChild("ResetCooldownEvent")
+	if resetCooldownEvent and resetCooldownEvent:IsA("RemoteEvent") then
+		HubState.Connections.QuietOrDieResetCooldown = resetCooldownEvent.OnClientEvent:Connect(function()
+			farmState.LastEmote = 0
+		end)
+	end
+
+	HubState.Connections.QuietOrDieAutoFarm = RunService.Heartbeat:Connect(function()
+		if not farmState.Enabled then return end
+		if not IsQuietOrDieSurvivor() then return end
+		local character = Player.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		if not humanoid or humanoid.Health <= 0 or not root then return end
+		if farmState.SafePlace and farmState.DroppedCharacter ~= character then
+			farmState.DroppedCharacter = character
+			ThemeObjects.SetRootUpright(root, root.CFrame, Vector3.new(-82, 53, -145))
+			root.AssemblyLinearVelocity = Vector3.new(0, -3, 0)
+		end
+		local now = os.clock()
+		if farmState.LastEmote ~= 0 and now - farmState.LastEmote < farmState.TauntDelay then return end
+		local fired = false
+		for _ = 1, farmState.TauntBurst do
+			if TriggerQuietOrDieTaunt() then fired = true end
+		end
+		if fired then farmState.LastEmote = now end
+	end)
+
+	HubState.Connections.QuietOrDieAutoEvent = RunService.Heartbeat:Connect(function()
+		if not eventState.Enabled then return end
+		if IsQuietOrDieKiller() then eventState.Current = nil return end
+		if os.clock() - eventState.LastMove < 0.06 then return end
+		eventState.LastMove = os.clock()
+		local character = Player.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		local eventFolder = workspace:FindFirstChild("EventSpawns")
+		if not humanoid or humanoid.Health <= 0 or not root or not eventFolder then return end
+
+		local now = os.clock()
+		for item, expiresAt in pairs(eventState.Skipped) do
+			if not item.Parent or expiresAt <= now then eventState.Skipped[item] = nil end
+		end
+
+		local target = eventState.Current
+		if not target or not target.Parent or eventState.Skipped[target] then
+			target = nil
+			local closestDistance = math.huge
+			for _, item in ipairs(eventFolder:GetChildren()) do
+				if item.Name:match("^EventItem%d+$") and not eventState.Skipped[item] then
+					local part = item:IsA("BasePart") and item or item:FindFirstChildWhichIsA("BasePart", true)
+					if part then
+						local distance = (root.Position - part.Position).Magnitude
+						if distance < closestDistance then
+							closestDistance = distance
+							target = item
+						end
+					end
+				end
+			end
+			eventState.Current = target
+			eventState.Started = now
+		elseif now - eventState.Started > 1.5 then
+			eventState.Skipped[target] = now + 2
+			eventState.Current = nil
+			return
+		end
+
+		if target and target.Parent then
+			local targetPart = target:IsA("BasePart") and target or target:FindFirstChildWhichIsA("BasePart", true)
+			if targetPart then
+				ThemeObjects.SetRootUpright(root, root.CFrame, targetPart.Position + Vector3.new(0, -3.5, 0))
+			end
+		end
+	end)
+
+	ThemeObjects.OpenQuietOrDiePage = function()
+		HubState.SelectedGame = "Quiet Or Die"
+		if IsCurrentGamePage() and Runtime.ActivateGameKeybindScope then Runtime.ActivateGameKeybindScope("Quiet Or Die") end
+		if HubState.PageHeader then HubState.PageHeader.Text = "Quiet Or Die" end
+		if HubState.GamesTabButton then HubState.GamesTabButton.Text = "Quiet Or Die" end
+		if HubState.MM2BackButton then HubState.MM2BackButton.Visible = true end
+		if HubState.GamesPage then HubState.GamesPage.Visible = false; HubState.GamesPage.Position = UDim2.new(1.1, 0, 0, 54) end
+		if HubState.MM2Page then HubState.MM2Page.Visible = false; HubState.MM2Page.Position = UDim2.new(1.1, 0, 0, 54) end
+		quietPage.Visible = true
+		quietPage.Position = UDim2.new(0, 114, 0, 54)
+		coinsDisplay.Visible = true
+		winsDisplay.Visible = true
+		historyButton.Visible = true
+		ThemeObjects.ActiveTabName = "Games"
+		HubState.ActiveTabIndex = table.find(HubState.TabNames, "Games") or HubState.ActiveTabIndex
+		HubState.ActiveContentPage = quietPage
+		UpdateTheme(true)
+	end
+	ThemeObjects.OpenQuietOrDiePage()
+
+end
+
+-- Body ESP lives in the main Combat page.
+
+UpdateTheme(true)

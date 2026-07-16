@@ -1,0 +1,1699 @@
+-- Page-only module for Hqydeu Script Hub. Upload this file to its raw GitHub target.
+local Runtime = (type(getgenv) == "function" and getgenv().HqydeuLoader_Runtime) or shared.HqydeuLoader_Runtime
+if not Runtime then return warn("Hqydeu page module: main hub runtime was not found") end
+
+local function IsCurrentGamePage()
+	local replicatedStorage = game:GetService("ReplicatedStorage")
+	local configs = replicatedStorage:FindFirstChild("Configs")
+	local modules = replicatedStorage:FindFirstChild("Modules")
+	return (configs and configs:FindFirstChild("BeeConfig") ~= nil)
+		or (modules and modules:FindFirstChild("SeasonMath") ~= nil)
+end
+
+local HubState = Runtime.HubState
+local ThemeObjects = Runtime.ThemeObjects
+local MainFrame = Runtime.MainFrame
+local ScreenGui = Runtime.ScreenGui
+local Player = Runtime.Player or game:GetService("Players").LocalPlayer
+local SavedKeybinds = Runtime.SavedKeybinds or {}
+local AccentColor = Runtime.GetAccentColor and Runtime.GetAccentColor() or Color3.fromRGB(0, 210, 255)
+local FrameThemeColor = Runtime.GetFrameThemeColor and Runtime.GetFrameThemeColor() or Color3.fromRGB(28, 28, 38)
+local InactiveTextColor = Runtime.InactiveTextColor or function() return Color3.fromRGB(255, 255, 255) end
+local LoadKeybind = Runtime.LoadKeybind or function() return Enum.KeyCode.Unknown end
+local SaveKeybind = Runtime.SaveKeybind or function() end
+local LoadGameKeybind = Runtime.LoadGameKeybind or LoadKeybind
+local SaveGameKeybind = Runtime.SaveGameKeybind or SaveKeybind
+local KeybindText = Runtime.KeybindText or function(keyCode) return keyCode == Enum.KeyCode.Unknown and "..." or keyCode.Name end
+local SavePersistentSettings = Runtime.SavePersistentSettings or function() end
+local GuiSizeValue = Runtime.GuiSizeValue or 50
+local GuiScaleFromValue = Runtime.GuiScaleFromValue or function() return 1 end
+local PlayClick = Runtime.PlayClick or function() end
+local TrackConnection = Runtime.TrackConnection or function(name, connection) HubState.Connections[name] = connection; return connection end
+local UpdateTheme = Runtime.UpdateTheme or function() end
+if not HubState or not ThemeObjects or not MainFrame then return warn("Hqydeu page module: runtime is incomplete") end
+HubState.Connections = HubState.Connections or {}
+ScreenGui = ScreenGui or MainFrame:FindFirstAncestorOfClass("ScreenGui")
+
+local ModuleVersion = "GABH-SeasonTimer-v14"
+local existingPage = MainFrame:FindFirstChild("GrowABeehivePage")
+local existingDock = ScreenGui and ScreenGui:FindFirstChild("GrowABeehiveFilterDock")
+local existingHistory = ScreenGui and ScreenGui:FindFirstChild("GrowABeehiveHistoryPanel")
+local existingBeeSell = ScreenGui and ScreenGui:FindFirstChild("GrowABeehiveSellBeesPanel")
+if existingPage and existingPage:GetAttribute("ModuleVersion") == ModuleVersion and ThemeObjects.OpenGrowABeehivePage then
+	ThemeObjects.OpenGrowABeehivePage()
+	return
+end
+if HubState.PageHeader then
+	for _, childName in ipairs({"GrowABeehiveMoneyDisplay", "GrowABeehiveRarestDisplay", "GrowABeehiveSeasonDisplay", "GrowABeehiveHistoryButton"}) do
+		local child = HubState.PageHeader:FindFirstChild(childName)
+		if child then child:Destroy() end
+	end
+end
+if existingPage then existingPage:Destroy() end
+if existingDock then existingDock:Destroy() end
+if existingHistory then existingHistory:Destroy() end
+if existingBeeSell then existingBeeSell:Destroy() end
+for _, connectionName in ipairs({"GrowABeehiveFilterDockPosition", "GrowABeehiveFilterDockSize", "GrowABeehiveHistoryPanelPosition", "GrowABeehiveHistoryPanelSize", "GrowABeehiveSellBeesPanelPosition", "GrowABeehiveSellBeesPanelSize"}) do
+	if HubState.Connections[connectionName] then
+		HubState.Connections[connectionName]:Disconnect()
+		HubState.Connections[connectionName] = nil
+	end
+end
+
+local RarityOptions = {"Common", "Uncommon", "Rare", "Epic", "Legendary", "Secret", "Prismatic", "Divine", "Exotic", "Transcended"}
+local MutationOptions = {"None", "Bloom", "Hacker", "Firework"}
+local SeasonOptions = {"Summer", "Spring", "Winter", "Autumn"}
+local Green = Color3.fromRGB(38, 190, 92)
+local Red = Color3.fromRGB(220, 42, 58)
+local RarityRank = {}
+for index, rarity in ipairs(RarityOptions) do
+	RarityRank[rarity] = index
+end
+
+local defaultRarities = {}
+for _, rarity in ipairs(RarityOptions) do
+	defaultRarities[rarity] = rarity ~= "Common" and rarity ~= "Uncommon"
+end
+local defaultMutations = {}
+for _, mutation in ipairs(MutationOptions) do
+	defaultMutations[mutation] = true
+end
+local defaultSeasons = {}
+for _, season in ipairs(SeasonOptions) do
+	defaultSeasons[season] = true
+end
+
+local function LoadSelection(saved, names, defaults)
+	local result = {}
+	local anySaved = type(saved) == "table"
+	for _, name in ipairs(names) do
+		result[name] = anySaved and saved[name] == true or defaults[name] == true
+	end
+	return result
+end
+
+local function EnsureSelection(current, names, defaults)
+	if type(current) ~= "table" then
+		return LoadSelection(nil, names, defaults)
+	end
+	for _, name in ipairs(names) do
+		if current[name] == nil then
+			current[name] = defaults[name] == true
+		end
+	end
+	return current
+end
+
+local function ClampSeconds(value, fallback)
+	value = tonumber(value)
+	if not value then return fallback end
+	return math.clamp(value, 0.5, 60)
+end
+
+local function FormatSeconds(value)
+	value = ClampSeconds(value, 2)
+	if math.floor(value) == value then
+		return tostring(value)
+	end
+	return string.format("%.1f", value)
+end
+
+local state = HubState.GrowABeehiveState or {
+	AutoRoll = false,
+	AutoBuy = false,
+	AutoSell = false,
+	AutoEquip = false,
+	RollBusy = false,
+	BuyBusy = false,
+	SellBusy = false,
+	EquipBusy = false,
+	BeeTrashBusy = false,
+	FiltersOpen = false,
+	SellBeesOpen = false,
+	LastPromptRefresh = 0,
+	RollCount = 0,
+	LastRollSummary = "Rolls: 0",
+	PromptCache = {Roll = nil, Buy = {}},
+	HistoryOpen = false,
+	PurchaseHistory = type(SavedKeybinds.GABHPurchaseHistory) == "table" and SavedKeybinds.GABHPurchaseHistory or {},
+	SelectedRarities = LoadSelection(SavedKeybinds.GABHSelectedRarities, RarityOptions, defaultRarities),
+	SelectedMutations = LoadSelection(SavedKeybinds.GABHSelectedMutations, MutationOptions, defaultMutations),
+	SelectedSeasons = LoadSelection(SavedKeybinds.GABHSelectedSeasons, SeasonOptions, defaultSeasons),
+	SellDelaySeconds = ClampSeconds(SavedKeybinds.GABHSellDelaySeconds, 2),
+}
+HubState.GrowABeehiveState = state
+state.AutoEquip = state.AutoEquip == true
+state.SelectedRarities = EnsureSelection(state.SelectedRarities, RarityOptions, defaultRarities)
+state.SelectedMutations = EnsureSelection(state.SelectedMutations, MutationOptions, defaultMutations)
+state.SelectedSeasons = EnsureSelection(state.SelectedSeasons, SeasonOptions, defaultSeasons)
+state.SellDelaySeconds = ClampSeconds(state.SellDelaySeconds or SavedKeybinds.GABHSellDelaySeconds, 2)
+state.PromptCache = state.PromptCache or {Roll = nil, Buy = {}}
+state.PurchaseHistory = type(state.PurchaseHistory) == "table" and state.PurchaseHistory or {}
+state.RollCount = tonumber(state.RollCount) or 0
+state.LastRollSummary = state.LastRollSummary or ("Rolls: " .. tostring(state.RollCount))
+
+local growPage = Instance.new("ScrollingFrame")
+growPage.Name = "GrowABeehivePage"
+growPage.Size = UDim2.new(0, 346, 1, -54)
+growPage.Position = UDim2.new(1.1, 0, 0, 54)
+growPage.BackgroundTransparency = 1
+growPage.BorderSizePixel = 0
+growPage.ClipsDescendants = true
+growPage.ScrollBarThickness = 3
+growPage.ScrollBarImageColor3 = AccentColor
+growPage.ScrollingDirection = Enum.ScrollingDirection.Y
+growPage.ElasticBehavior = Enum.ElasticBehavior.Never
+growPage.VerticalScrollBarInset = Enum.ScrollBarInset.ScrollBar
+growPage.CanvasSize = UDim2.new(0, 0, 0, 280)
+growPage.Visible = false
+growPage:SetAttribute("ModuleVersion", ModuleVersion)
+growPage.Parent = MainFrame
+
+local function SaveOptions()
+	SavedKeybinds.GABHSelectedRarities = state.SelectedRarities
+	SavedKeybinds.GABHSelectedMutations = state.SelectedMutations
+	SavedKeybinds.GABHSelectedSeasons = state.SelectedSeasons
+	SavedKeybinds.GABHSellDelaySeconds = state.SellDelaySeconds
+	SavedKeybinds.GABHPurchaseHistory = state.PurchaseHistory
+	SavePersistentSettings()
+end
+
+local function AddText(obj)
+	table.insert(ThemeObjects.Texts, obj)
+	return obj
+end
+
+local function AddBackground(obj)
+	table.insert(ThemeObjects.Backgrounds, obj)
+	return obj
+end
+
+local function EnsureControlOutline(obj)
+	if not obj then return obj end
+	local outline = obj:FindFirstChild("ControlOutline")
+	if not outline then
+		outline = Instance.new("UIStroke")
+		outline.Name = "ControlOutline"
+		outline.Parent = obj
+	end
+	if outline:IsA("UIStroke") then
+		outline.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+		outline.Color = Color3.fromRGB(0, 0, 0)
+		outline.Thickness = 1.25
+		outline.Transparency = 0
+	end
+	if obj:IsA("TextButton") or obj:IsA("TextBox") then
+		obj.BorderSizePixel = 0
+		obj.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+		obj.BackgroundTransparency = 0.8
+	end
+	return obj
+end
+
+local seasonMathCache = nil
+local beeConfigCache = nil
+local rarityConfigCache = nil
+
+local function SafeRequire(pathParts)
+	local current = game
+	for index, part in ipairs(pathParts) do
+		if index == 1 and (part == "ReplicatedStorage" or part == "Players" or part == "Workspace") then
+			current = game:GetService(part == "Workspace" and "Workspace" or part)
+		else
+			current = current and current:FindFirstChild(part)
+		end
+		if not current then return nil end
+	end
+	local ok, result = pcall(require, current)
+	return ok and result or nil
+end
+
+local function GetSeasonMath()
+	if seasonMathCache ~= nil and seasonMathCache ~= false then return seasonMathCache end
+	if seasonMathCache == false and os.clock() - (state.LastSeasonMathRequire or 0) < 3 then return nil end
+	state.LastSeasonMathRequire = os.clock()
+	seasonMathCache = SafeRequire({"ReplicatedStorage", "Modules", "SeasonMath"}) or false
+	return seasonMathCache ~= false and seasonMathCache or nil
+end
+
+local function GetBeeConfig()
+	if beeConfigCache ~= nil and beeConfigCache ~= false then return beeConfigCache end
+	if beeConfigCache == false and os.clock() - (state.LastBeeConfigRequire or 0) < 3 then return nil end
+	state.LastBeeConfigRequire = os.clock()
+	beeConfigCache = SafeRequire({"ReplicatedStorage", "Configs", "BeeConfig"}) or false
+	return beeConfigCache ~= false and beeConfigCache or nil
+end
+
+local function GetRarityConfig()
+	if rarityConfigCache ~= nil and rarityConfigCache ~= false then return rarityConfigCache end
+	if rarityConfigCache == false and os.clock() - (state.LastRarityConfigRequire or 0) < 3 then return nil end
+	state.LastRarityConfigRequire = os.clock()
+	rarityConfigCache = SafeRequire({"ReplicatedStorage", "Configs", "RarityConfig"}) or false
+	return rarityConfigCache ~= false and rarityConfigCache or nil
+end
+
+local function GetBeeInfo(beeIdOrName)
+	local beeConfig = GetBeeConfig()
+	if not beeConfig or not beeIdOrName then return nil end
+	if type(beeConfig.Get) == "function" then
+		local ok, info = pcall(beeConfig.Get, beeIdOrName)
+		if ok and info then return info end
+	end
+	for _, info in ipairs(beeConfig.Roster or {}) do
+		if info.Id == beeIdOrName or info.Name == beeIdOrName then
+			return info
+		end
+	end
+end
+
+local function GetRarityInfo(rarity)
+	local rarityConfig = GetRarityConfig()
+	if not rarityConfig or not rarity then return nil end
+	if type(rarityConfig.Get) == "function" then
+		local ok, info = pcall(rarityConfig.Get, rarity)
+		if ok and info then return info end
+	end
+	for _, info in pairs(rarityConfig.Roster or rarityConfig.List or rarityConfig) do
+		if type(info) == "table" and info.Name == rarity then
+			return info
+		end
+	end
+end
+
+local function FormatClock(seconds)
+	seconds = math.max(0, math.floor(tonumber(seconds) or 0))
+	local hours = math.floor(seconds / 3600)
+	local minutes = math.floor(seconds % 3600 / 60)
+	local secs = seconds % 60
+	if hours > 0 then
+		return ("%d:%02d:%02d"):format(hours, minutes, secs)
+	end
+	return ("%02d:%02d"):format(minutes, secs)
+end
+
+local function BeeOdds(info)
+	if type(info) ~= "table" then return nil end
+	local direct = tonumber(info.OddsOneInX or info.OneIn or info.ChanceOneIn or info.RollChance or info.Odds or info.Chance or info.BaseOneInX)
+	if direct then return direct end
+	local rarityInfo = GetRarityInfo(info.Rarity)
+	local base = rarityInfo and tonumber(rarityInfo.BaseOneInX)
+	local subWeight = tonumber(info.SubWeight)
+	if base and subWeight and subWeight > 0 then
+		return math.max(1, math.floor(base * (100 / subWeight) + 0.5))
+	end
+	return base
+end
+
+local function BeeScore(info)
+	if type(info) ~= "table" then return 0 end
+	local odds = BeeOdds(info)
+	if odds then return (odds * 100) + (tonumber(info.SubRank) or 0) end
+	return (RarityRank[info.Rarity] or 0) * 1000
+end
+
+local function MutationText(mutation)
+	if mutation == nil or mutation == "" or mutation == "None" then return "" end
+	return " [" .. tostring(mutation) .. "]"
+end
+
+local function NormalizeSeasonText(text)
+	text = tostring(text or ""):gsub("%[NOW%]%s*", "")
+	text = text:gsub("NEXT%s+SEASON", "SEASON")
+	text = text:gsub("Next%s+Season", "SEASON")
+	text = text:gsub("next%s+season", "SEASON")
+	text = text:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+	local upper = string.upper(text)
+	local clock = text:match("%d+:%d%d:%d%d") or text:match("%d+:%d%d")
+	if clock then
+		for _, season in ipairs(SeasonOptions) do
+			if upper:find(string.upper(season), 1, true) then
+				return ("%s: %s"):format(string.upper(season), clock)
+			end
+		end
+		if upper:find("SEASON", 1, true) then
+			return "SEASON: " .. clock
+		end
+	end
+	return text
+end
+
+local function ExtractSeasonName(text)
+	local upper = string.upper(tostring(text or ""))
+	for _, season in ipairs(SeasonOptions) do
+		if upper:find(string.upper(season), 1, true) then
+			return string.upper(season)
+		end
+	end
+	return nil
+end
+
+local function LooksLikeSeasonTimer(text)
+	local upper = string.upper(tostring(text or ""))
+	return (upper:find("SEASON", 1, true) or ExtractSeasonName(upper)) and upper:match("%d+:%d%d")
+end
+
+local function ReadSeasonTextFromLabel(label)
+	if not label or not (label:IsA("TextLabel") or label:IsA("TextButton") or label:IsA("TextBox")) then return nil end
+	local text = NormalizeSeasonText(label.Text)
+	if LooksLikeSeasonTimer(text) then return text end
+	local parent = label.Parent
+	if parent then
+		local pieces = {}
+		for _, child in ipairs(parent:GetDescendants()) do
+			if child:IsA("TextLabel") or child:IsA("TextButton") or child:IsA("TextBox") then
+				local childText = tostring(child.Text or "")
+				if childText ~= "" then table.insert(pieces, childText) end
+			end
+		end
+		text = NormalizeSeasonText(table.concat(pieces, " "))
+		if LooksLikeSeasonTimer(text) then return text end
+	end
+	return nil
+end
+
+local function FindSeasonTextFallback(force)
+	local now = os.clock()
+	local cachedLabel = state.SeasonTextLabel
+	if cachedLabel and cachedLabel.Parent and (cachedLabel:IsA("TextLabel") or cachedLabel:IsA("TextButton") or cachedLabel:IsA("TextBox")) then
+		local text = ReadSeasonTextFromLabel(cachedLabel)
+		if text then
+			state.LastSeasonText = text
+			return text
+		end
+	end
+	if not force and now - (state.LastSeasonTextScan or 0) < 0.25 then
+		return state.LastSeasonText
+	end
+	state.LastSeasonTextScan = now
+	local function resolve(root, path)
+		local current = root
+		for _, name in ipairs(path) do
+			current = current and current:FindFirstChild(name)
+			if not current then return nil end
+		end
+		return current
+	end
+	for _, label in ipairs({
+		resolve(workspace:FindFirstChild("CountdownScreen"), {"Screen", "SurfaceGui", "Board", "NameLabel"}),
+		resolve(workspace:FindFirstChild("NatureEvent"), {"EventScreen", "SeasonScreen", "SurfaceGui", "Board", "NameLabel"}),
+		resolve(workspace:FindFirstChild("EventScreen"), {"SeasonScreen", "SurfaceGui", "Board", "NameLabel"}),
+	}) do
+		if label and (label:IsA("TextLabel") or label:IsA("TextButton") or label:IsA("TextBox")) then
+			local text = ReadSeasonTextFromLabel(label)
+			if text then
+				state.SeasonTextLabel = label
+				state.LastSeasonText = text
+				return text
+			end
+		end
+	end
+	local localPlayer = Player
+	local roots = {}
+	local playerGui = localPlayer and localPlayer:FindFirstChildOfClass("PlayerGui")
+	if playerGui then table.insert(roots, playerGui) end
+	table.insert(roots, workspace)
+	for _, root in ipairs(roots) do
+		for _, obj in ipairs(root:GetDescendants()) do
+			if (obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox")) and (not ScreenGui or not obj:IsDescendantOf(ScreenGui)) then
+				local normalized = ReadSeasonTextFromLabel(obj)
+				if normalized then
+					state.SeasonTextLabel = obj
+					state.LastSeasonText = normalized
+					return state.LastSeasonText
+				end
+			end
+		end
+	end
+	state.SeasonTextLabel = nil
+	state.LastSeasonText = nil
+	return nil
+end
+
+local function CreateRow(name, y)
+	local row = Instance.new("Frame")
+	row.Name = name
+	row.Size = UDim2.new(1, -24, 0, 38)
+	row.Position = UDim2.new(0, 12, 0, y)
+	row.BackgroundColor3 = Color3.fromRGB(65, 65, 67)
+	row.BackgroundTransparency = 0.92
+	row.BorderSizePixel = 0
+	row.Parent = growPage
+	AddBackground(row)
+	Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
+	return row
+end
+
+local function CreateTitle(parent, text)
+	local title = Instance.new("TextLabel")
+	title.Size = UDim2.new(0, 140, 0, 24)
+	title.Position = UDim2.new(0, 12, 0, 7)
+	title.BackgroundTransparency = 1
+	title.Text = text
+	title.Font = Enum.Font.GothamBold
+	title.TextSize = 11
+	title.TextXAlignment = Enum.TextXAlignment.Left
+	title.Parent = parent
+	return AddText(title)
+end
+
+local function CreateButton(parent, name, text, xOffset, width)
+	local button = Instance.new("TextButton")
+	button.Name = name
+	button.Size = UDim2.new(0, width, 0, 22)
+	button.Position = UDim2.new(1, xOffset, 0, 8)
+	button.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+	button.BackgroundTransparency = 0.8
+	button.BorderSizePixel = 0
+	button.Text = text
+	button.Font = Enum.Font.GothamBold
+	button.TextSize = 9
+	button.Parent = parent
+	AddBackground(button)
+	AddText(button)
+	Instance.new("UICorner", button).CornerRadius = UDim.new(0, 5)
+	EnsureControlOutline(button)
+	return button
+end
+
+local function CreateInput(parent, name, text, xOffset, width)
+	local box = Instance.new("TextBox")
+	box.Name = name
+	box.Size = UDim2.new(0, width, 0, 22)
+	box.Position = UDim2.new(1, xOffset, 0, 8)
+	box.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+	box.BackgroundTransparency = 0.8
+	box.BorderSizePixel = 0
+	box.ClearTextOnFocus = false
+	box.Text = text
+	box.PlaceholderText = "sec"
+	box.Font = Enum.Font.GothamBold
+	box.TextSize = 9
+	box.Parent = parent
+	AddBackground(box)
+	AddText(box)
+	Instance.new("UICorner", box).CornerRadius = UDim.new(0, 5)
+	EnsureControlOutline(box)
+	return box
+end
+
+local rollRow = CreateRow("GrowABeehiveRollRow", 4)
+local rollTitle = CreateTitle(rollRow, "Auto Roll:")
+local rollStatusDisplay = Instance.new("TextLabel")
+rollStatusDisplay.Name = "GrowABeehiveRollStatus"
+rollStatusDisplay.Size = UDim2.new(0, 104, 0, 18)
+rollStatusDisplay.Position = UDim2.new(1, -210, 0, 10)
+rollStatusDisplay.BackgroundTransparency = 1
+rollStatusDisplay.Text = state.LastRollSummary
+rollStatusDisplay.Font = Enum.Font.GothamBold
+rollStatusDisplay.TextSize = 8
+rollStatusDisplay.TextXAlignment = Enum.TextXAlignment.Right
+rollStatusDisplay.TextTruncate = Enum.TextTruncate.AtEnd
+rollStatusDisplay.Parent = rollRow
+AddText(rollStatusDisplay)
+local rollToggle = CreateButton(rollRow, "GrowABeehiveRollToggle", "Off", -98, 44)
+
+local buyRow = CreateRow("GrowABeehiveBuyRow", 50)
+local buyTitle = CreateTitle(buyRow, "Auto Buy:")
+local historyButton = CreateButton(buyRow, "GrowABeehiveHistoryButton", "i", -180, 22)
+historyButton.TextSize = 7
+historyButton.Visible = true
+local editFiltersButton = CreateButton(buyRow, "GrowABeehiveEditFilters", "Edit", -152, 46)
+local buyToggle = CreateButton(buyRow, "GrowABeehiveBuyToggle", "Off", -98, 44)
+
+local sellRow = CreateRow("GrowABeehiveSellRow", 96)
+local sellTitle = CreateTitle(sellRow, "Auto Sell:")
+local sellInput = CreateInput(sellRow, "GrowABeehiveSellSeconds", FormatSeconds(state.SellDelaySeconds), -152, 46)
+local sellToggle = CreateButton(sellRow, "GrowABeehiveSellToggle", "Off", -98, 44)
+
+local equipRow = CreateRow("GrowABeehiveEquipRow", 142)
+local equipTitle = CreateTitle(equipRow, "Auto Equip Best:")
+local equipToggle = CreateButton(equipRow, "GrowABeehiveEquipToggle", "Off", -98, 44)
+
+local beeSellRow = CreateRow("GrowABeehiveBeeSellRow", 188)
+local beeSellTitle = CreateTitle(beeSellRow, "Sell Bees:")
+local beeSellButton = CreateButton(beeSellRow, "GrowABeehiveBeeSellButton", "Open", -98, 44)
+
+local seasonDisplay = Instance.new("TextLabel")
+seasonDisplay.Name = "GrowABeehiveSeasonDisplay"
+seasonDisplay.Size = UDim2.new(0, 190, 0, 12)
+seasonDisplay.Position = UDim2.new(0.5, -95, 0, 4)
+seasonDisplay.BackgroundTransparency = 1
+seasonDisplay.Text = "SEASON: ..."
+seasonDisplay.Font = Enum.Font.GothamBold
+seasonDisplay.TextSize = 9
+seasonDisplay.TextColor3 = Color3.fromRGB(255, 255, 255)
+seasonDisplay.TextXAlignment = Enum.TextXAlignment.Center
+seasonDisplay.TextTruncate = Enum.TextTruncate.AtEnd
+seasonDisplay.Visible = false
+seasonDisplay.Parent = HubState.PageHeader
+AddText(seasonDisplay)
+
+Instance.new("UICorner", historyButton).CornerRadius = UDim.new(1, 0)
+
+local historyPanel = Instance.new("Frame")
+historyPanel.Name = "GrowABeehiveHistoryPanel"
+historyPanel.Size = UDim2.new(0, 256, 0, 130)
+historyPanel.Position = UDim2.new(0.5, -128, 0, 4)
+historyPanel.BackgroundColor3 = Color3.fromRGB(48, 48, 52)
+historyPanel.BackgroundTransparency = 0
+historyPanel.BorderSizePixel = 0
+historyPanel.ZIndex = 20
+historyPanel.Visible = false
+historyPanel.Parent = growPage
+AddBackground(historyPanel)
+Instance.new("UICorner", historyPanel).CornerRadius = UDim.new(0, 9)
+local historyStroke = Instance.new("UIStroke")
+historyStroke.Color = AccentColor
+historyStroke.Thickness = 1.5
+historyStroke.Transparency = 0.08
+historyStroke.Parent = historyPanel
+table.insert(ThemeObjects.Accents, historyStroke)
+local historyGradient = Instance.new("UIGradient")
+historyGradient.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(42, 42, 48)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(24, 24, 30))
+})
+historyGradient.Rotation = 35
+historyGradient.Parent = historyPanel
+
+local historyTitle = Instance.new("TextLabel")
+historyTitle.Size = UDim2.new(1, -40, 0, 14)
+historyTitle.Position = UDim2.new(0, 8, 0, 6)
+historyTitle.BackgroundTransparency = 1
+historyTitle.Text = "Recent Purchases"
+historyTitle.Font = Enum.Font.GothamBold
+historyTitle.TextSize = 10
+historyTitle.TextXAlignment = Enum.TextXAlignment.Center
+historyTitle.ZIndex = 21
+historyTitle.Parent = historyPanel
+AddText(historyTitle)
+
+local historyCloseButton = Instance.new("TextButton")
+historyCloseButton.Name = "GrowABeehiveHistoryClose"
+historyCloseButton.Size = UDim2.new(0, 18, 0, 18)
+historyCloseButton.Position = UDim2.new(1, -24, 0, 5)
+historyCloseButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+historyCloseButton.BackgroundTransparency = 0.35
+historyCloseButton.BorderSizePixel = 0
+historyCloseButton.Text = "x"
+historyCloseButton.Font = Enum.Font.GothamBold
+historyCloseButton.TextSize = 9
+historyCloseButton.ZIndex = 22
+historyCloseButton.Parent = historyPanel
+AddBackground(historyCloseButton)
+AddText(historyCloseButton)
+Instance.new("UICorner", historyCloseButton).CornerRadius = UDim.new(0, 5)
+
+local historyDivider = Instance.new("Frame")
+historyDivider.Size = UDim2.new(0.72, 0, 0, 1)
+historyDivider.AnchorPoint = Vector2.new(0.5, 0)
+historyDivider.Position = UDim2.new(0.5, 0, 0, 25)
+historyDivider.BackgroundColor3 = Color3.fromRGB(235, 235, 235)
+historyDivider.BackgroundTransparency = 0.92
+historyDivider.BorderSizePixel = 0
+historyDivider.ZIndex = 21
+historyDivider.Parent = historyPanel
+
+local historyScroll = Instance.new("ScrollingFrame")
+historyScroll.Name = "GrowABeehiveHistoryScroll"
+historyScroll.Size = UDim2.new(1, -16, 1, -36)
+historyScroll.Position = UDim2.new(0, 8, 0, 30)
+historyScroll.BackgroundTransparency = 1
+historyScroll.BorderSizePixel = 0
+historyScroll.ScrollBarThickness = 3
+historyScroll.ScrollBarImageColor3 = AccentColor
+historyScroll.ScrollingDirection = Enum.ScrollingDirection.Y
+historyScroll.ElasticBehavior = Enum.ElasticBehavior.Never
+historyScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+historyScroll.ZIndex = 21
+historyScroll.Parent = historyPanel
+
+local function UpdateHistoryPanelPosition()
+	historyPanel.Position = UDim2.new(0.5, -128, 0, 4)
+end
+TrackConnection("GrowABeehiveHistoryPanelPosition", MainFrame:GetPropertyChangedSignal("AbsolutePosition"):Connect(UpdateHistoryPanelPosition))
+TrackConnection("GrowABeehiveHistoryPanelSize", MainFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(UpdateHistoryPanelPosition))
+UpdateHistoryPanelPosition()
+
+local beeSellPanel = Instance.new("Frame")
+beeSellPanel.Name = "GrowABeehiveSellBeesPanel"
+beeSellPanel.Size = UDim2.new(0, 256, 0, 220)
+beeSellPanel.Position = UDim2.new(0.5, -128, 0, 36)
+beeSellPanel.BackgroundColor3 = Color3.fromRGB(48, 48, 52)
+beeSellPanel.BackgroundTransparency = 0
+beeSellPanel.BorderSizePixel = 0
+beeSellPanel.ZIndex = 24
+beeSellPanel.Visible = false
+beeSellPanel.Parent = ScreenGui or MainFrame
+AddBackground(beeSellPanel)
+Instance.new("UICorner", beeSellPanel).CornerRadius = UDim.new(0, 9)
+local beeSellStroke = Instance.new("UIStroke")
+beeSellStroke.Color = AccentColor
+beeSellStroke.Thickness = 1.5
+beeSellStroke.Transparency = 0.08
+beeSellStroke.Parent = beeSellPanel
+table.insert(ThemeObjects.Accents, beeSellStroke)
+local beeSellGradient = Instance.new("UIGradient")
+beeSellGradient.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(42, 42, 48)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(24, 24, 30))
+})
+beeSellGradient.Rotation = 35
+beeSellGradient.Parent = beeSellPanel
+
+local beeSellPanelTitle = Instance.new("TextLabel")
+beeSellPanelTitle.Size = UDim2.new(1, -16, 0, 14)
+beeSellPanelTitle.Position = UDim2.new(0, 8, 0, 6)
+beeSellPanelTitle.BackgroundTransparency = 1
+beeSellPanelTitle.Text = "Sell Bees"
+beeSellPanelTitle.Font = Enum.Font.GothamBold
+beeSellPanelTitle.TextSize = 10
+beeSellPanelTitle.TextXAlignment = Enum.TextXAlignment.Center
+beeSellPanelTitle.ZIndex = 25
+beeSellPanelTitle.Parent = beeSellPanel
+AddText(beeSellPanelTitle)
+
+local beeSellKeybindButton = Instance.new("TextButton")
+beeSellKeybindButton.Name = "GrowABeehiveSellBeesKeybind"
+beeSellKeybindButton.Size = UDim2.new(0, 46, 0, 22)
+beeSellKeybindButton.Position = UDim2.new(0, 8, 0, 3)
+beeSellKeybindButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+beeSellKeybindButton.BackgroundTransparency = 0.8
+beeSellKeybindButton.BorderSizePixel = 0
+beeSellKeybindButton.Text = KeybindText(LoadGameKeybind("GABHSellBeesMenu"))
+beeSellKeybindButton.Font = Enum.Font.GothamBold
+beeSellKeybindButton.TextSize = 9
+beeSellKeybindButton.TextColor3 = AccentColor
+beeSellKeybindButton.ZIndex = 26
+beeSellKeybindButton.Parent = beeSellPanel
+AddBackground(beeSellKeybindButton)
+table.insert(ThemeObjects.Accents, beeSellKeybindButton)
+Instance.new("UICorner", beeSellKeybindButton).CornerRadius = UDim.new(0, 5)
+ThemeObjects.EnsureKeybindOutline(beeSellKeybindButton)
+-- ControlOutline is (re)built by EnsureControlOutline(beeSellKeybindButton) below.
+
+local beeSellCloseButton = Instance.new("TextButton")
+beeSellCloseButton.Name = "GrowABeehiveSellBeesClose"
+beeSellCloseButton.Size = UDim2.new(0, 18, 0, 18)
+beeSellCloseButton.Position = UDim2.new(1, -24, 0, 5)
+beeSellCloseButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+beeSellCloseButton.BackgroundTransparency = 0.35
+beeSellCloseButton.BorderSizePixel = 0
+beeSellCloseButton.Text = "x"
+beeSellCloseButton.Font = Enum.Font.GothamBold
+beeSellCloseButton.TextSize = 9
+beeSellCloseButton.ZIndex = 26
+beeSellCloseButton.Parent = beeSellPanel
+AddBackground(beeSellCloseButton)
+AddText(beeSellCloseButton)
+Instance.new("UICorner", beeSellCloseButton).CornerRadius = UDim.new(0, 5)
+
+local beeSellStatus = Instance.new("TextLabel")
+beeSellStatus.Size = UDim2.new(1, -16, 0, 12)
+beeSellStatus.Position = UDim2.new(0, 8, 0, 202)
+beeSellStatus.BackgroundTransparency = 1
+beeSellStatus.Text = "Ready"
+beeSellStatus.Font = Enum.Font.GothamMedium
+beeSellStatus.TextSize = 7
+beeSellStatus.TextXAlignment = Enum.TextXAlignment.Center
+beeSellStatus.ZIndex = 25
+beeSellStatus.Parent = beeSellPanel
+AddText(beeSellStatus)
+
+local beeSellButtons = {}
+local function CreateBeeSellLabel(text, yPos)
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, -16, 0, 14)
+	label.Position = UDim2.new(0, 8, 0, yPos)
+	label.BackgroundTransparency = 1
+	label.Text = text
+	label.Font = Enum.Font.GothamBold
+	label.TextSize = 8
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.ZIndex = 25
+	label.Parent = beeSellPanel
+	AddText(label)
+end
+
+local function CreateBeeSellButton(kind, value, x, yPos)
+	local button = Instance.new("TextButton")
+	button.Name = "GrowABeehiveSell" .. kind .. value:gsub("%s+", "")
+	button.Size = UDim2.new(0, 76, 0, 20)
+	button.Position = UDim2.new(0, x, 0, yPos)
+	button.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+	button.BackgroundTransparency = 0.35
+	button.BorderSizePixel = 0
+	button.Text = value
+	button.Font = Enum.Font.GothamBold
+	button.TextSize = 7
+	button.ZIndex = 25
+	button.Parent = beeSellPanel
+	AddBackground(button)
+	AddText(button)
+	Instance.new("UICorner", button).CornerRadius = UDim.new(0, 5)
+	table.insert(beeSellButtons, {Button = button, Kind = kind, Value = value})
+	return button
+end
+
+CreateBeeSellLabel("Bees", 24)
+local sellY = 40
+for i, rarity in ipairs(RarityOptions) do
+	local column = (i - 1) % 3
+	local row = math.floor((i - 1) / 3)
+	CreateBeeSellButton("Rarity", rarity, 8 + column * 82, sellY + row * 23)
+end
+sellY = sellY + math.ceil(#RarityOptions / 3) * 23 + 4
+CreateBeeSellLabel("Seasonal", sellY)
+sellY += 16
+for i, season in ipairs(SeasonOptions) do
+	local column = (i - 1) % 2
+	local row = math.floor((i - 1) / 2)
+	CreateBeeSellButton("Season", season, 48 + column * 82, sellY + row * 23)
+end
+
+local function UpdateBeeSellPanelPosition()
+	local scale = GuiScaleFromValue(GuiSizeValue)
+	beeSellPanel.Position = UDim2.fromOffset(MainFrame.AbsolutePosition.X - ((256 + 7) * scale), MainFrame.AbsolutePosition.Y + (54 * scale))
+end
+TrackConnection("GrowABeehiveSellBeesPanelPosition", MainFrame:GetPropertyChangedSignal("AbsolutePosition"):Connect(UpdateBeeSellPanelPosition))
+TrackConnection("GrowABeehiveSellBeesPanelSize", MainFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(UpdateBeeSellPanelPosition))
+UpdateBeeSellPanelPosition()
+
+local filterDock = Instance.new("Frame")
+filterDock.Name = "GrowABeehiveFilterDock"
+filterDock.Size = UDim2.new(0, 256, 0, 220)
+filterDock.BackgroundColor3 = Color3.fromRGB(48, 48, 52)
+filterDock.BackgroundTransparency = 0
+filterDock.BorderSizePixel = 0
+filterDock.ZIndex = 80
+filterDock.Visible = false
+filterDock.Parent = ScreenGui or MainFrame
+AddBackground(filterDock)
+Instance.new("UICorner", filterDock).CornerRadius = UDim.new(0, 9)
+local filterDockStroke = Instance.new("UIStroke")
+filterDockStroke.Color = AccentColor
+filterDockStroke.Thickness = 1.5
+filterDockStroke.Transparency = 0.08
+filterDockStroke.Parent = filterDock
+table.insert(ThemeObjects.Accents, filterDockStroke)
+local filterDockGradient = Instance.new("UIGradient")
+filterDockGradient.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(42, 42, 48)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(24, 24, 30))
+})
+filterDockGradient.Rotation = 35
+filterDockGradient.Parent = filterDock
+local filterDockScale = Instance.new("UIScale")
+filterDockScale.Scale = GuiScaleFromValue(GuiSizeValue)
+filterDockScale.Parent = filterDock
+
+local function UpdateFilterDockPosition()
+	local scale = filterDockScale.Scale
+	filterDock.Position = UDim2.fromOffset(MainFrame.AbsolutePosition.X - ((256 + 7) * scale), MainFrame.AbsolutePosition.Y + (54 * scale))
+end
+TrackConnection("GrowABeehiveFilterDockPosition", MainFrame:GetPropertyChangedSignal("AbsolutePosition"):Connect(UpdateFilterDockPosition))
+TrackConnection("GrowABeehiveFilterDockSize", MainFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(UpdateFilterDockPosition))
+UpdateFilterDockPosition()
+
+local filterHeader = Instance.new("TextLabel")
+filterHeader.Size = UDim2.new(1, -40, 0, 14)
+filterHeader.Position = UDim2.new(0, 8, 0, 6)
+filterHeader.BackgroundTransparency = 1
+filterHeader.Text = "Buy Filters"
+filterHeader.Font = Enum.Font.GothamBold
+filterHeader.TextSize = 10
+filterHeader.TextXAlignment = Enum.TextXAlignment.Center
+filterHeader.ZIndex = 81
+filterHeader.Parent = filterDock
+AddText(filterHeader)
+
+local filterCloseButton = Instance.new("TextButton")
+filterCloseButton.Name = "GrowABeehiveFilterClose"
+filterCloseButton.Size = UDim2.new(0, 18, 0, 18)
+filterCloseButton.Position = UDim2.new(1, -24, 0, 5)
+filterCloseButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+filterCloseButton.BackgroundTransparency = 0.35
+filterCloseButton.BorderSizePixel = 0
+filterCloseButton.Text = "x"
+filterCloseButton.Font = Enum.Font.GothamBold
+filterCloseButton.TextSize = 9
+filterCloseButton.ZIndex = 82
+filterCloseButton.Parent = filterDock
+AddBackground(filterCloseButton)
+AddText(filterCloseButton)
+Instance.new("UICorner", filterCloseButton).CornerRadius = UDim.new(0, 5)
+
+local filterScroll = Instance.new("ScrollingFrame")
+filterScroll.Name = "GrowABeehiveFilterScroll"
+filterScroll.Size = UDim2.new(1, -16, 1, -36)
+filterScroll.Position = UDim2.new(0, 8, 0, 30)
+filterScroll.BackgroundTransparency = 1
+filterScroll.BorderSizePixel = 0
+filterScroll.ScrollBarThickness = 3
+filterScroll.ScrollBarImageColor3 = AccentColor
+filterScroll.ScrollingDirection = Enum.ScrollingDirection.Y
+filterScroll.ElasticBehavior = Enum.ElasticBehavior.Never
+filterScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+filterScroll.ZIndex = 81
+filterScroll.Parent = filterDock
+
+local filterButtons = {}
+local RefreshButtons
+
+local function CreateFilterLabel(text, y)
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, -4, 0, 14)
+	label.Position = UDim2.new(0, 0, 0, y)
+	label.BackgroundTransparency = 1
+	label.Text = text
+	label.Font = Enum.Font.GothamBold
+	label.TextSize = 8
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.ZIndex = 82
+	label.Parent = filterScroll
+	AddText(label)
+end
+
+local function CreateFilterButton(kind, value, x, y)
+	local button = Instance.new("TextButton")
+	button.Name = "GrowABeehiveFilter" .. kind .. value:gsub("%s+", "")
+	button.Size = UDim2.new(0, 76, 0, 20)
+	button.Position = UDim2.new(0, x, 0, y)
+	button.BackgroundColor3 = Red
+	button.BackgroundTransparency = 0
+	button.BorderSizePixel = 0
+	button.Font = Enum.Font.GothamBold
+	button.TextSize = 7
+	button.TextColor3 = Color3.fromRGB(255, 255, 255)
+	button.ZIndex = 82
+	button.Parent = filterScroll
+	AddText(button)
+	Instance.new("UICorner", button).CornerRadius = UDim.new(0, 5)
+	local stroke = Instance.new("UIStroke")
+	stroke.Name = "ControlOutline"
+	stroke.Color = Color3.fromRGB(0, 0, 0)
+	stroke.Thickness = 1
+	stroke.Transparency = 0.18
+	stroke.Parent = button
+	table.insert(filterButtons, {Button = button, Kind = kind, Value = value})
+	button.MouseButton1Click:Connect(function()
+		PlayClick()
+		if kind == "Rarity" then
+			state.SelectedRarities[value] = not state.SelectedRarities[value]
+		elseif kind == "Mutation" then
+			state.SelectedMutations[value] = not state.SelectedMutations[value]
+		else
+			state.SelectedSeasons[value] = not state.SelectedSeasons[value]
+		end
+		SaveOptions()
+		RefreshButtons()
+	end)
+end
+
+CreateFilterLabel("Bees", 0)
+local y = 16
+for i, rarity in ipairs(RarityOptions) do
+	local column = (i - 1) % 3
+	local row = math.floor((i - 1) / 3)
+	CreateFilterButton("Rarity", rarity, column * 82, y + row * 23)
+end
+y = y + math.ceil(#RarityOptions / 3) * 23 + 6
+CreateFilterLabel("Mutations", y)
+y += 16
+for i, mutation in ipairs(MutationOptions) do
+	local column = (i - 1) % 3
+	local row = math.floor((i - 1) / 3)
+	CreateFilterButton("Mutation", mutation, column * 82, y + row * 23)
+end
+y = y + math.ceil(#MutationOptions / 3) * 23 + 6
+CreateFilterLabel("Seasonal", y)
+y += 16
+for i, season in ipairs(SeasonOptions) do
+	local column = (i - 1) % 3
+	local row = math.floor((i - 1) / 3)
+	CreateFilterButton("Season", season, column * 82, y + row * 23)
+end
+filterScroll.CanvasSize = UDim2.new(0, 0, 0, y + math.ceil(#SeasonOptions / 3) * 23 + 6)
+
+local function IsGrowPageActive()
+	return ThemeObjects.ActiveTabName == "Games" and HubState.SelectedGame == "Grow a Beehive" and growPage.Parent ~= nil and growPage.Visible == true
+end
+
+local function RefreshHeaderDisplays(force)
+	seasonDisplay.Visible = true
+	local okTime, now = pcall(function()
+		return workspace:GetServerTimeNow()
+	end)
+	now = okTime and now or os.time()
+
+	local seasonText = FindSeasonTextFallback(force)
+	if seasonText then
+		seasonDisplay.TextColor3 = ExtractSeasonName(seasonText) and AccentColor or Color3.fromRGB(255, 255, 255)
+		seasonDisplay.Text = seasonText
+		return
+	end
+
+	local seasonMath = GetSeasonMath()
+	if seasonMath then
+		local okActive, activeSeason = pcall(seasonMath.IsActive, now)
+		if okActive and activeSeason then
+			local okName, seasonName = pcall(seasonMath.SeasonAt, now)
+			local okRemaining, remaining = pcall(seasonMath.ActiveRemaining, now)
+			seasonText = ("%s: %s"):format(string.upper(okName and seasonName or "SEASON"), FormatClock(okRemaining and remaining or 0))
+			seasonDisplay.TextColor3 = AccentColor
+		else
+			local okStart, nextStart = pcall(seasonMath.NextSeasonStart, now)
+			if okStart and nextStart then
+				seasonText = ("SEASON: %s"):format(FormatClock(nextStart - now))
+			end
+			seasonDisplay.TextColor3 = Color3.fromRGB(255, 255, 255)
+		end
+	end
+
+	seasonDisplay.Text = seasonText or "SEASON: N/A"
+end
+
+local function RefreshHistoryPanel()
+	for _, child in ipairs(historyScroll:GetChildren()) do
+		if child:IsA("GuiObject") then
+			child:Destroy()
+		end
+	end
+	local yPos = 0
+	if #state.PurchaseHistory == 0 then
+		local empty = Instance.new("TextLabel")
+		empty.Size = UDim2.new(1, -4, 0, 22)
+		empty.Position = UDim2.new(0, 0, 0, 0)
+		empty.BackgroundTransparency = 1
+		empty.Text = "No buys yet"
+		empty.Font = Enum.Font.GothamMedium
+		empty.TextSize = 8
+		empty.TextColor3 = Color3.fromRGB(210, 210, 215)
+		empty.TextXAlignment = Enum.TextXAlignment.Center
+		empty.ZIndex = 85
+		empty.Parent = historyScroll
+		historyScroll.CanvasSize = UDim2.new(0, 0, 0, 24)
+		return
+	end
+	for index, entry in ipairs(state.PurchaseHistory) do
+		if type(entry) ~= "table" then
+			entry = {Name = tostring(entry), Rarity = "?", Mutation = "None"}
+		end
+		local line = Instance.new("TextLabel")
+		line.Size = UDim2.new(1, -4, 0, 18)
+		line.Position = UDim2.new(0, 0, 0, yPos)
+		line.BackgroundTransparency = 1
+		line.BorderSizePixel = 0
+		line.Font = Enum.Font.GothamMedium
+		line.TextSize = 8
+		line.TextColor3 = Color3.fromRGB(255, 255, 255)
+		line.TextXAlignment = Enum.TextXAlignment.Center
+		line.TextWrapped = true
+		line.Text = ("%d.  %s  |  %s  |  %s"):format(index, entry.Name or "Bee", entry.Rarity or "?", entry.Mutation or "None")
+		line.ZIndex = 85
+		line.Parent = historyScroll
+		yPos += 20
+	end
+	historyScroll.CanvasSize = UDim2.new(0, 0, 0, math.max(24, yPos))
+end
+
+local function RecordPurchase(name, rarity, mutation)
+	name = tostring(name or "Bee")
+	rarity = tostring(rarity or "?")
+	mutation = mutation and tostring(mutation) ~= "" and tostring(mutation) or "None"
+	local key = name .. "|" .. rarity .. "|" .. mutation
+	if state.LastHistoryKey == key and os.clock() - (state.LastHistoryAt or 0) < 1 then
+		return
+	end
+	state.LastHistoryKey = key
+	state.LastHistoryAt = os.clock()
+	table.insert(state.PurchaseHistory, 1, {Name = name, Rarity = rarity, Mutation = mutation})
+	while #state.PurchaseHistory > 25 do
+		table.remove(state.PurchaseHistory)
+	end
+	SaveOptions()
+	if state.HistoryOpen then
+		RefreshHistoryPanel()
+	end
+end
+
+RefreshButtons = function()
+	rollToggle.Text = state.AutoRoll and "On" or "Off"
+	buyToggle.Text = state.AutoBuy and "On" or "Off"
+	sellToggle.Text = state.AutoSell and "On" or "Off"
+	equipToggle.Text = state.AutoEquip and "On" or "Off"
+	beeSellButton.Text = state.SellBeesOpen and "Close" or "Open"
+	editFiltersButton.Text = state.FiltersOpen and "Close" or "Edit"
+	rollStatusDisplay.Text = state.LastRollSummary or ("Rolls: " .. tostring(state.RollCount or 0))
+	filterDock.Visible = state.FiltersOpen and IsGrowPageActive()
+	historyPanel.Visible = state.HistoryOpen and IsGrowPageActive()
+	beeSellPanel.Visible = state.SellBeesOpen and IsGrowPageActive()
+	sellInput.Text = FormatSeconds(state.SellDelaySeconds)
+	rollTitle.TextColor3 = state.AutoRoll and AccentColor or InactiveTextColor()
+	buyTitle.TextColor3 = state.AutoBuy and AccentColor or InactiveTextColor()
+	sellTitle.TextColor3 = state.AutoSell and AccentColor or InactiveTextColor()
+	equipTitle.TextColor3 = state.AutoEquip and AccentColor or InactiveTextColor()
+	beeSellTitle.TextColor3 = state.SellBeesOpen and AccentColor or InactiveTextColor()
+	for _, entry in ipairs(filterButtons) do
+		local selected = entry.Kind == "Rarity" and state.SelectedRarities[entry.Value] or entry.Kind == "Mutation" and state.SelectedMutations[entry.Value] or state.SelectedSeasons[entry.Value]
+		entry.Button.Text = (selected and "BUY " or "NO ") .. entry.Value
+		entry.Button.BackgroundColor3 = selected and Green or Red
+		entry.Button.BackgroundTransparency = 0
+	end
+	UpdateFilterDockPosition()
+	UpdateBeeSellPanelPosition()
+end
+
+local previousCloseTransientPopups = ThemeObjects.CloseTransientPopups
+ThemeObjects.CloseTransientPopups = function(...)
+	state.FiltersOpen = false
+	state.HistoryOpen = false
+	state.SellBeesOpen = false
+	if filterDock then filterDock.Visible = false end
+	if historyPanel then historyPanel.Visible = false end
+	if beeSellPanel then beeSellPanel.Visible = false end
+	if previousCloseTransientPopups then
+		return previousCloseTransientPopups(...)
+	end
+end
+
+local packetsCache = nil
+local function GetPackets()
+	if packetsCache ~= nil and packetsCache ~= false then return packetsCache end
+	if packetsCache == false and os.clock() - (state.LastPacketsRequire or 0) < 3 then
+		return nil, "Packets not found"
+	end
+	state.LastPacketsRequire = os.clock()
+	local replicatedStorage = game:GetService("ReplicatedStorage")
+	local packages = replicatedStorage:FindFirstChild("Packages")
+	local packetsModule = packages and packages:FindFirstChild("Packets")
+	if not packetsModule then
+		packetsCache = false
+		return nil, "Packets not found"
+	end
+	local ok, result = pcall(require, packetsModule)
+	if not ok then
+		packetsCache = false
+		return nil, tostring(result)
+	end
+	packetsCache = result
+	return packetsCache
+end
+
+local function FirePacket(name, payload)
+	local packets, reason = GetPackets()
+	if not packets or not packets[name] then
+		return false, {Reason = reason or (name .. " packet missing")}
+	end
+	local callOk, packetOk, response = pcall(function()
+		if payload == nil then
+			return packets[name]:Fire()
+		end
+		return packets[name]:Fire(payload)
+	end)
+	if not callOk then
+		return false, {Reason = tostring(packetOk)}
+	end
+	return packetOk, response
+end
+
+local function FireTrashBee()
+	local packets = GetPackets()
+	if not packets or not packets.TrashBee then return false end
+	return pcall(function()
+		packets.TrashBee:Fire()
+	end)
+end
+
+local function BeeMetaMatches(beeId, mutation, kind, value)
+	local info = GetBeeInfo(beeId)
+	if not info then return false end
+	if kind == "Rarity" then
+		return info.Rarity == value and (info.RollEvent == nil or info.RollEvent == "")
+	end
+	if kind == "Season" then
+		return info.RollEvent == value
+	end
+	if kind == "Mutation" then
+		local name = mutation
+		if name == nil or name == "" then name = "None" end
+		return name == value
+	end
+	return false
+end
+
+local function BeeToolMatches(tool, kind, value)
+	if not tool or not tool:IsA("Tool") then return false end
+	if tool:GetAttribute("Kind") ~= "Bee" then return false end
+	return BeeMetaMatches(tool:GetAttribute("Id"), tool:GetAttribute("Mutation"), kind, value)
+end
+
+local function FindMatchingBeeTool(kind, value)
+	local player = Player
+	local character = player and player.Character
+	if character then
+		for _, child in ipairs(character:GetChildren()) do
+			if BeeToolMatches(child, kind, value) then
+				return child
+			end
+		end
+	end
+	local backpack = player and player:FindFirstChildOfClass("Backpack")
+	if backpack then
+		for _, child in ipairs(backpack:GetChildren()) do
+			if BeeToolMatches(child, kind, value) then
+				return child
+			end
+		end
+	end
+end
+
+local function TrashMatchingBeeTools(kind, value)
+	if state.BeeTrashBusy then return end
+	state.BeeTrashBusy = true
+	beeSellStatus.Text = "Checking inventory..."
+	local player = Player
+	local character = player and player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		beeSellStatus.Text = "No character"
+		state.BeeTrashBusy = false
+		return
+	end
+	local trashed = 0
+	for _ = 1, 75 do
+		local tool = FindMatchingBeeTool(kind, value)
+		if not tool then break end
+		local toolUuid = tool:GetAttribute("UUID")
+		beeSellStatus.Text = "Trashing " .. tostring(tool.Name)
+		if tool.Parent ~= character then
+			humanoid:EquipTool(tool)
+			local equipStart = os.clock()
+			repeat
+				task.wait(0.04)
+			until tool.Parent == character or os.clock() - equipStart > 1
+		end
+		if tool.Parent ~= character then
+			beeSellStatus.Text = "Could not equip bee"
+			break
+		end
+		local ok = FireTrashBee()
+		if ok then
+			trashed += 1
+			local started = os.clock()
+			repeat
+				task.wait(0.05)
+			until not tool.Parent or tool:GetAttribute("UUID") ~= toolUuid or os.clock() - started > 1.25
+		else
+			break
+		end
+	end
+	beeSellStatus.Text = trashed > 0 and ("Trashed " .. tostring(trashed)) or "None found"
+	state.BeeTrashBusy = false
+end
+
+local function IsSelectedMutation(mutation)
+	local name = mutation
+	if name == nil or name == "" then name = "None" end
+	return state.SelectedMutations[name] == true
+end
+
+local function IsSelectedSeason(season)
+	return season ~= nil and state.SelectedSeasons[season] == true
+end
+
+local function ResultMatches(result)
+	if type(result) ~= "table" then return false end
+	local rarity = result.Rarity or "Common"
+	local info = GetBeeInfo(result.BeeId or result.Name or result.Bee)
+	if info and IsSelectedSeason(info.RollEvent) then
+		return IsSelectedMutation(result.Mutation)
+	end
+	return state.SelectedRarities[rarity] == true and IsSelectedMutation(result.Mutation)
+end
+
+local function SortedResults(results)
+	local sorted = {}
+	for _, result in pairs(type(results) == "table" and results or {}) do
+		table.insert(sorted, result)
+	end
+	table.sort(sorted, function(a, b)
+		return (tonumber(a.Podium) or 255) < (tonumber(b.Podium) or 255)
+	end)
+	return sorted
+end
+
+local function UpdateRollSummary(summary)
+	state.RollCount = (tonumber(state.RollCount) or 0) + 1
+	state.LastRollSummary = ("Rolls: %d"):format(state.RollCount)
+	if summary and summary ~= "" then
+		state.LastRollSummary = state.LastRollSummary .. " | " .. summary
+	end
+	rollStatusDisplay.Text = state.LastRollSummary
+end
+
+local function BestRollSummary(results)
+	local bestResult, bestInfo, bestScore = nil, nil, -1
+	for _, result in ipairs(SortedResults(results)) do
+		local info = GetBeeInfo(result.BeeId or result.Name or result.Bee)
+		local score = BeeScore(info)
+		if info and score > bestScore then
+			bestResult = result
+			bestInfo = info
+			bestScore = score
+		end
+	end
+	if not bestInfo then return nil end
+	return (bestInfo.Name or bestResult.Name or "Bee") .. MutationText(bestResult and bestResult.Mutation)
+end
+
+local function RefreshPromptCache(force)
+	local now = os.clock()
+	if not force and now - (state.LastPromptRefresh or 0) < 0.45 then
+		return state.PromptCache
+	end
+	state.LastPromptRefresh = now
+	local cache = {Roll = nil, Buy = {}}
+	for _, obj in ipairs(workspace:GetDescendants()) do
+		if obj:IsA("ProximityPrompt") then
+			local action = string.lower(obj.ActionText or "")
+			local objectText = string.lower(obj.ObjectText or "")
+			if not cache.Roll and action:find("roll", 1, true) and (objectText:find("roll", 1, true) or objectText:find("bee", 1, true)) then
+				cache.Roll = obj
+			elseif action:find("buy", 1, true) or action:find("claim", 1, true) then
+				table.insert(cache.Buy, obj)
+			end
+		end
+	end
+	state.PromptCache = cache
+	return cache
+end
+
+local function FindRollPrompt()
+	local farmRef = SafeRequire({"ReplicatedStorage", "Scripts", "Modules", "FarmRef"})
+	local plotNav = SafeRequire({"ReplicatedStorage", "Modules", "PlotNav"})
+	local ok, farm = pcall(function()
+		return farmRef and farmRef.TryGet and farmRef.TryGet()
+	end)
+	local okPart, rollPart = pcall(function()
+		return ok and farm and plotNav and plotNav.GetRollPart and plotNav.GetRollPart(farm)
+	end)
+	local prompt = okPart and rollPart and rollPart:FindFirstChildWhichIsA("ProximityPrompt")
+	if prompt then return prompt end
+	return RefreshPromptCache(true).Roll
+end
+
+local function FindText(root, name)
+	if not root then return nil end
+	for _, obj in ipairs(root:GetDescendants()) do
+		if obj:IsA("TextLabel") and obj.Name == name then
+			return obj.Text
+		end
+	end
+	return nil
+end
+
+local function PromptMatches(prompt)
+	local parent = prompt.Parent
+	local rarity = FindText(parent, "Rarity") or "Common"
+	local mutation = FindText(parent, "Mutation")
+	local beeName = prompt.ObjectText or FindText(parent, "Name")
+	local info = GetBeeInfo(beeName)
+	if info and IsSelectedSeason(info.RollEvent) then
+		return IsSelectedMutation(mutation)
+	end
+	return state.SelectedRarities[rarity] == true and IsSelectedMutation(mutation)
+end
+
+local function AutoBuyResults(results)
+	if state.BuyBusy then return 0 end
+	state.BuyBusy = true
+	local bought = 0
+	for _, result in ipairs(SortedResults(results)) do
+		if ResultMatches(result) and result.Podium then
+			local ok = FirePacket("BuyBee", {Podium = result.Podium})
+			if ok then
+				bought += 1
+				local info = GetBeeInfo(result.BeeId or result.Name or result.Bee)
+				RecordPurchase(info and info.Name or result.Name or result.BeeId or "Bee", result.Rarity, result.Mutation)
+				task.wait(0.1)
+			end
+		end
+	end
+	state.BuyBusy = false
+	return bought
+end
+
+local function TryExistingBuyPrompts(maxPasses, passDelay)
+	if state.BuyBusy then return end
+	if type(fireproximityprompt) ~= "function" then return end
+	state.BuyBusy = true
+	maxPasses = maxPasses or 1
+	passDelay = passDelay or 0.18
+	for pass = 1, maxPasses do
+		local cache = RefreshPromptCache(true)
+		for _, prompt in ipairs(cache.Buy) do
+			if prompt and prompt.Parent and PromptMatches(prompt) then
+				local beeName = prompt.ObjectText or FindText(prompt.Parent, "Name") or "Bee"
+				local rarity = FindText(prompt.Parent, "Rarity") or "?"
+				local mutation = FindText(prompt.Parent, "Mutation")
+				fireproximityprompt(prompt)
+				RecordPurchase(beeName, rarity, mutation)
+				task.wait(0.08)
+			end
+		end
+		if pass < maxPasses then task.wait(passDelay) end
+	end
+	state.BuyBusy = false
+end
+
+local function DoEquipBest()
+	if state.EquipBusy then return end
+	state.EquipBusy = true
+	FirePacket("EquipBest")
+	state.EquipBusy = false
+end
+
+local function DoRoll()
+	if state.RollBusy then return end
+	state.RollBusy = true
+	local ok, response = FirePacket("RequestRoll")
+	if ok then
+		task.wait(0.35)
+		UpdateRollSummary(response and response.Results and BestRollSummary(response.Results) or "packet")
+		if response and response.Results and state.AutoBuy then
+			AutoBuyResults(response.Results)
+		elseif state.AutoBuy then
+			TryExistingBuyPrompts(3, 0.2)
+		end
+		if state.AutoEquip then DoEquipBest() end
+		state.RollBusy = false
+		return
+	end
+	if type(fireproximityprompt) == "function" then
+		local prompt = FindRollPrompt()
+		if prompt and prompt.Parent then
+			fireproximityprompt(prompt)
+			task.wait(1.75)
+			UpdateRollSummary("prompt")
+			if state.AutoBuy then TryExistingBuyPrompts(3, 0.2) end
+			if state.AutoEquip then DoEquipBest() end
+			state.RollBusy = false
+			return
+		end
+	end
+	if state.AutoEquip then DoEquipBest() end
+	state.RollBusy = false
+end
+
+local function DoSell()
+	if state.SellBusy then return end
+	state.SellBusy = true
+	FirePacket("GrabHoney")
+	task.wait(0.12)
+	FirePacket("SellHoney")
+	state.SellBusy = false
+end
+
+local function ToggleRoll()
+	state.AutoRoll = not state.AutoRoll
+	RefreshButtons()
+	UpdateTheme(true)
+end
+
+local function ToggleBuy()
+	state.AutoBuy = not state.AutoBuy
+	RefreshButtons()
+	UpdateTheme(true)
+end
+
+local function ToggleSell()
+	state.AutoSell = not state.AutoSell
+	RefreshButtons()
+	UpdateTheme(true)
+end
+
+local function ToggleEquip()
+	state.AutoEquip = not state.AutoEquip
+	if state.AutoEquip then task.spawn(DoEquipBest) end
+	RefreshButtons()
+	UpdateTheme(true)
+end
+
+local function ToggleBeeSellPanel()
+	state.SellBeesOpen = not state.SellBeesOpen
+	if state.SellBeesOpen then
+		state.FiltersOpen = false
+		state.HistoryOpen = false
+		beeSellStatus.Text = "Ready"
+	end
+	RefreshButtons()
+	UpdateTheme(true)
+end
+
+rollToggle.MouseButton1Click:Connect(function()
+	PlayClick()
+	ToggleRoll()
+end)
+buyToggle.MouseButton1Click:Connect(function()
+	PlayClick()
+	ToggleBuy()
+end)
+sellToggle.MouseButton1Click:Connect(function()
+	PlayClick()
+	ToggleSell()
+end)
+equipToggle.MouseButton1Click:Connect(function()
+	PlayClick()
+	ToggleEquip()
+end)
+beeSellButton.MouseButton1Click:Connect(function()
+	PlayClick()
+	ToggleBeeSellPanel()
+end)
+beeSellCloseButton.MouseButton1Click:Connect(function()
+	PlayClick()
+	state.SellBeesOpen = false
+	RefreshButtons()
+	UpdateTheme(true)
+end)
+filterCloseButton.MouseButton1Click:Connect(function()
+	PlayClick()
+	state.FiltersOpen = false
+	RefreshButtons()
+	UpdateTheme(true)
+end)
+editFiltersButton.MouseButton1Click:Connect(function()
+	PlayClick()
+	state.FiltersOpen = not state.FiltersOpen
+	if state.FiltersOpen then
+		state.SellBeesOpen = false
+		state.HistoryOpen = false
+	end
+	RefreshButtons()
+	UpdateTheme(true)
+end)
+historyButton.MouseButton1Click:Connect(function()
+	PlayClick()
+	state.HistoryOpen = not state.HistoryOpen
+	if state.HistoryOpen then
+		state.FiltersOpen = false
+		state.SellBeesOpen = false
+	end
+	if state.HistoryOpen then RefreshHistoryPanel() end
+	RefreshButtons()
+	UpdateTheme(true)
+end)
+historyCloseButton.MouseButton1Click:Connect(function()
+	PlayClick()
+	state.HistoryOpen = false
+	RefreshButtons()
+	UpdateTheme(true)
+end)
+for _, entry in ipairs(beeSellButtons) do
+	entry.Button.MouseButton1Click:Connect(function()
+		PlayClick()
+		task.spawn(TrashMatchingBeeTools, entry.Kind, entry.Value)
+	end)
+end
+sellInput.FocusLost:Connect(function()
+	state.SellDelaySeconds = ClampSeconds(sellInput.Text, state.SellDelaySeconds)
+	sellInput.Text = FormatSeconds(state.SellDelaySeconds)
+	SaveOptions()
+end)
+
+table.insert(ThemeObjects.StateTexts, {Object = rollTitle, IsEnabled = function() return state.AutoRoll end})
+table.insert(ThemeObjects.StateTexts, {Object = buyTitle, IsEnabled = function() return state.AutoBuy end})
+table.insert(ThemeObjects.StateTexts, {Object = sellTitle, IsEnabled = function() return state.AutoSell end})
+table.insert(ThemeObjects.StateTexts, {Object = equipTitle, IsEnabled = function() return state.AutoEquip end})
+table.insert(ThemeObjects.StateTexts, {Object = beeSellTitle, IsEnabled = function() return state.SellBeesOpen end})
+local function KeybindStoragePart(value)
+	return tostring(value):gsub("%W+", "")
+end
+ThemeObjects.AddFeatureKeybind({Name = "Auto Roll", Category = "Grow a Beehive", Storage = "GABHAutoRoll", Parent = rollRow, Toggle = rollToggle, Get = function() return LoadGameKeybind("GABHAutoRoll") end, Set = function(key) SaveGameKeybind("GABHAutoRoll", key) end, Action = ToggleRoll})
+ThemeObjects.AddFeatureKeybind({Name = "Auto Buy", Category = "Grow a Beehive", Storage = "GABHAutoBuy", Parent = buyRow, Toggle = buyToggle, Get = function() return LoadGameKeybind("GABHAutoBuy") end, Set = function(key) SaveGameKeybind("GABHAutoBuy", key) end, Action = ToggleBuy})
+ThemeObjects.AddFeatureKeybind({Name = "Auto Sell", Category = "Grow a Beehive", Storage = "GABHAutoSell", Parent = sellRow, Toggle = sellToggle, Get = function() return LoadGameKeybind("GABHAutoSell") end, Set = function(key) SaveGameKeybind("GABHAutoSell", key) end, Action = ToggleSell})
+ThemeObjects.AddFeatureKeybind({Name = "Auto Equip Best", Category = "Grow a Beehive", Storage = "GABHAutoEquip", Parent = equipRow, Toggle = equipToggle, Get = function() return LoadGameKeybind("GABHAutoEquip") end, Set = function(key) SaveGameKeybind("GABHAutoEquip", key) end, Action = ToggleEquip})
+local sellBeesKeybindEntry = {Name = "Sell Bees Menu", Category = "Grow a Beehive", Storage = "GABHSellBeesMenu", Parent = beeSellRow, Toggle = beeSellButton, Get = function() return LoadGameKeybind("GABHSellBeesMenu") end, Set = function(key) SaveGameKeybind("GABHSellBeesMenu", key); beeSellKeybindButton.Text = KeybindText(key) end, Action = ToggleBeeSellPanel}
+ThemeObjects.AddFeatureKeybind(sellBeesKeybindEntry)
+beeSellKeybindButton.MouseButton1Click:Connect(function()
+	PlayClick()
+	if ThemeObjects.BeginFeatureKeybind then
+		ThemeObjects.BeginFeatureKeybind(sellBeesKeybindEntry, beeSellKeybindButton)
+	end
+end)
+if ThemeObjects.AttachKeybindClearPrompt then ThemeObjects.AttachKeybindClearPrompt(sellBeesKeybindEntry, beeSellKeybindButton) end
+EnsureControlOutline(beeSellKeybindButton)
+ThemeObjects.AddFeatureKeybind({Name = "Buy Filters Menu", Category = "Grow a Beehive", Storage = "GABHBuyFiltersMenu", Get = function() return LoadGameKeybind("GABHBuyFiltersMenu") end, Set = function(key) SaveGameKeybind("GABHBuyFiltersMenu", key) end, Action = function()
+	state.FiltersOpen = not state.FiltersOpen
+	if state.FiltersOpen then
+		state.SellBeesOpen = false
+		state.HistoryOpen = false
+	end
+	RefreshButtons()
+	UpdateTheme(true)
+end})
+ThemeObjects.AddFeatureKeybind({Name = "Recent Purchases", Category = "Grow a Beehive", Storage = "GABHRecentPurchases", Get = function() return LoadGameKeybind("GABHRecentPurchases") end, Set = function(key) SaveGameKeybind("GABHRecentPurchases", key) end, Action = function()
+	state.HistoryOpen = not state.HistoryOpen
+	if state.HistoryOpen then
+		state.FiltersOpen = false
+		state.SellBeesOpen = false
+		RefreshHistoryPanel()
+	end
+	RefreshButtons()
+	UpdateTheme(true)
+end})
+for _, entry in ipairs(beeSellButtons) do
+	local kind, value = entry.Kind, entry.Value
+	local storage = "GABHSell" .. KeybindStoragePart(kind) .. KeybindStoragePart(value)
+	ThemeObjects.AddFeatureKeybind({Name = "Sell " .. value .. " Bees", Category = "Grow a Beehive", Storage = storage, Get = function() return LoadGameKeybind(storage) end, Set = function(key) SaveGameKeybind(storage, key) end, Action = function()
+		task.spawn(TrashMatchingBeeTools, kind, value)
+	end})
+end
+
+local function RefreshGrowControlOutlines()
+	for _, obj in ipairs(growPage:GetDescendants()) do
+		if obj:IsA("TextButton") and (obj.Name == "FeatureKeybindButton" or obj.Name:find("Toggle") or obj.Name:find("Button") or obj.Name:find("Edit")) then
+			EnsureControlOutline(obj)
+			if obj.Name == "FeatureKeybindButton" then
+				obj.TextColor3 = AccentColor
+			end
+		elseif obj:IsA("TextBox") then
+			EnsureControlOutline(obj)
+		end
+	end
+end
+RefreshGrowControlOutlines()
+
+task.spawn(function()
+	while growPage.Parent do
+		if state.AutoRoll then
+			DoRoll()
+			task.wait(0.25)
+		else
+			task.wait(0.2)
+		end
+	end
+end)
+
+task.spawn(function()
+	while growPage.Parent do
+		if state.AutoBuy and not state.AutoRoll then
+			TryExistingBuyPrompts(1, 0)
+			task.wait(0.75)
+		else
+			task.wait(0.35)
+		end
+	end
+end)
+
+task.spawn(function()
+	while growPage.Parent do
+		if state.AutoSell then
+			DoSell()
+			task.wait(state.SellDelaySeconds)
+		else
+			task.wait(0.35)
+		end
+	end
+end)
+
+task.spawn(function()
+	while growPage.Parent do
+		if state.AutoEquip then
+			DoEquipBest()
+			task.wait(3)
+		else
+			task.wait(0.5)
+		end
+	end
+end)
+
+task.spawn(function()
+	while growPage.Parent do
+		local active = IsGrowPageActive()
+		seasonDisplay.Visible = active
+		historyButton.Visible = active
+		if not active then
+			seasonDisplay.Visible = false
+			historyButton.Visible = false
+			filterDock.Visible = false
+			historyPanel.Visible = false
+			beeSellPanel.Visible = false
+			task.wait(0.35)
+		else
+			RefreshHeaderDisplays(false)
+			task.wait(0.5)
+		end
+	end
+end)
+
+ThemeObjects.OpenGrowABeehivePage = function()
+	HubState.SelectedGame = "Grow a Beehive"
+	if IsCurrentGamePage() and Runtime.ActivateGameKeybindScope then Runtime.ActivateGameKeybindScope("Grow a Beehive") end
+	HubState.settingsOpen = false
+	if HubState.SettingsPage then
+		HubState.SettingsPage.Position = UDim2.new(1.1, 80, 0, 32)
+	end
+	if HubState.PageHeader then HubState.PageHeader.Text = "Grow a Beehive" end
+	if HubState.GamesTabButton then HubState.GamesTabButton.Text = "Grow a Beehive" end
+	if HubState.MM2BackButton then HubState.MM2BackButton.Visible = true end
+	for _, page in ipairs({
+		HubState.MovementPage,
+		HubState.CombatPage,
+		ThemeObjects.CameraPage,
+		HubState.TeleportPage,
+		HubState.ScriptsPage,
+		MainFrame:FindFirstChild("ExtrasPage"),
+	}) do
+		if page then
+			page.Visible = false
+			page.Position = UDim2.new(1.1, 0, 0, 54)
+		end
+	end
+	if HubState.GamesPage then HubState.GamesPage.Visible = false; HubState.GamesPage.Position = UDim2.new(1.1, 0, 0, 54) end
+	if HubState.MM2Page then HubState.MM2Page.Visible = false; HubState.MM2Page.Position = UDim2.new(1.1, 0, 0, 54) end
+	local quietPage = MainFrame:FindFirstChild("QuietOrDiePage")
+	if quietPage then quietPage.Visible = false; quietPage.Position = UDim2.new(1.1, 0, 0, 54) end
+	local quietCoins = HubState.PageHeader and HubState.PageHeader:FindFirstChild("QuietOrDieCoinsDisplay")
+	if quietCoins then quietCoins.Visible = false end
+	local quietWins = HubState.PageHeader and HubState.PageHeader:FindFirstChild("QuietOrDieWinsDisplay")
+	if quietWins then quietWins.Visible = false end
+	local quietHistory = HubState.PageHeader and HubState.PageHeader:FindFirstChild("QuietOrDieHistoryButton")
+	if quietHistory then quietHistory.Visible = false end
+	growPage.Visible = true
+	growPage.Position = UDim2.new(0, 122, 0, 54)
+	state.LastSeasonTextScan = 0
+	RefreshHeaderDisplays(true)
+	ThemeObjects.ActiveTabName = "Games"
+	HubState.ActiveTabIndex = table.find(HubState.TabNames, "Games") or HubState.ActiveTabIndex
+	HubState.ActiveContentPage = growPage
+	RefreshButtons()
+	UpdateTheme(true)
+	RefreshGrowControlOutlines()
+end
+
+RefreshButtons()
+ThemeObjects.OpenGrowABeehivePage()
+UpdateTheme(true)
+RefreshGrowControlOutlines()

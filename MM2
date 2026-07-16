@@ -1,0 +1,1831 @@
+-- Page-only module for Hqydeu Script Hub. Upload this file to its raw GitHub target.
+local Runtime = (type(getgenv) == "function" and getgenv().HqydeuLoader_Runtime) or shared.HqydeuLoader_Runtime
+if not Runtime then return warn("Hqydeu page module: main hub runtime was not found") end
+
+local function IsCurrentGamePage()
+	return game.PlaceId == 142823291
+end
+
+local HubState = Runtime.HubState
+local ThemeObjects = Runtime.ThemeObjects
+local MainFrame = Runtime.MainFrame
+local ScreenGui = Runtime.ScreenGui
+local Player = Runtime.Player
+local Players = Runtime.Players or game:GetService("Players")
+local RunService = Runtime.RunService or game:GetService("RunService")
+local UserInputService = Runtime.UserInputService or game:GetService("UserInputService")
+local CoreGui = Runtime.CoreGui or game:GetService("CoreGui")
+local ReplicatedStorage = Runtime.ReplicatedStorage or game:GetService("ReplicatedStorage")
+local AccentColor = Runtime.GetAccentColor and Runtime.GetAccentColor() or Color3.fromRGB(0, 210, 255)
+local FrameThemeColor = Runtime.GetFrameThemeColor and Runtime.GetFrameThemeColor() or Color3.fromRGB(28, 28, 38)
+local InactiveTextColor = Runtime.InactiveTextColor or function() return Color3.fromRGB(255, 255, 255) end
+local KeybindText = Runtime.KeybindText or function(keyCode) return keyCode and keyCode.Name or "..." end
+local LoadKeybind = Runtime.LoadKeybind or function() return Enum.KeyCode.Unknown end
+local SaveKeybind = Runtime.SaveKeybind or function() end
+local LoadGameKeybind = Runtime.LoadGameKeybind or LoadKeybind
+local SaveGameKeybind = Runtime.SaveGameKeybind or SaveKeybind
+local GuiSizeValue = Runtime.GuiSizeValue or 50
+local GuiScaleFromValue = Runtime.GuiScaleFromValue or function(value) return 1 end
+local PlayClick = Runtime.PlayClick or function() end
+local PlaySwoosh = Runtime.PlaySwoosh or function() end
+local TrackConnection = Runtime.TrackConnection or function(name, connection) HubState.Connections[name] = connection; return connection end
+local UpdateTheme = Runtime.UpdateTheme or function() end
+local ToggleAutoLock = Runtime.ToggleAutoLock or function() end
+if not HubState or not ThemeObjects or not MainFrame then return warn("Hqydeu page module: runtime is incomplete") end
+HubState.Connections = HubState.Connections or {}
+
+
+if HubState.MM2Page and HubState.MM2Page.Parent then
+	if ThemeObjects.OpenMM2Page then ThemeObjects.OpenMM2Page() end
+	return
+end
+
+HubState.MM2Page = Instance.new("Frame")
+HubState.MM2Page.Name = "MM2Page"
+HubState.MM2Page.Size = UDim2.new(0, 346, 1, -54)
+HubState.MM2Page.Position = UDim2.new(1.1, 0, 0, 54)
+HubState.MM2Page.BackgroundTransparency = 1
+HubState.MM2Page.BorderSizePixel = 0
+HubState.MM2Page.ClipsDescendants = true
+HubState.MM2Page.Visible = false
+HubState.MM2Page.Parent = MainFrame
+
+-- ==================== COIN FARM ====================
+HubState.CoinFarmTitle = Instance.new("TextLabel")
+HubState.CoinFarmTitle.Size = UDim2.new(0, 80, 0, 17)
+HubState.CoinFarmTitle.Position = UDim2.new(0, 12, 0, 94)
+HubState.CoinFarmTitle.BackgroundTransparency = 1
+HubState.CoinFarmTitle.Text = "Coin Farm:"
+HubState.CoinFarmTitle.Font = Enum.Font.GothamBold
+HubState.CoinFarmTitle.TextSize = 10
+HubState.CoinFarmTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+HubState.CoinFarmTitle.TextXAlignment = Enum.TextXAlignment.Left
+HubState.CoinFarmTitle.Parent = HubState.MM2Page
+table.insert(ThemeObjects.Texts, HubState.CoinFarmTitle)
+
+HubState.CoinFarmToggle = Instance.new("TextButton")
+HubState.CoinFarmToggle.Size = UDim2.new(0, 32, 0, 17)
+HubState.CoinFarmToggle.Position = UDim2.new(0, 80, 0, 94)
+HubState.CoinFarmToggle.BackgroundColor3 = Color3.fromRGB(50, 50, 68)
+HubState.CoinFarmToggle.BackgroundTransparency = 0.8
+HubState.CoinFarmToggle.BorderSizePixel = 0
+HubState.CoinFarmToggle.Text = "Off"
+HubState.CoinFarmToggle.Font = Enum.Font.GothamBold
+HubState.CoinFarmToggle.Parent = HubState.MM2Page
+table.insert(ThemeObjects.Backgrounds, HubState.CoinFarmToggle)
+table.insert(ThemeObjects.Texts, HubState.CoinFarmToggle)
+Instance.new("UICorner", HubState.CoinFarmToggle).CornerRadius = UDim.new(0, 4)
+
+HubState.CoinFarmStatus = Instance.new("TextLabel")
+HubState.CoinFarmStatus.Size = UDim2.new(0, 140, 0, 11)
+HubState.CoinFarmStatus.Position = UDim2.new(0, 12, 0, 116)
+HubState.CoinFarmStatus.BackgroundTransparency = 1
+HubState.CoinFarmStatus.Text = "0"
+HubState.CoinFarmStatus.Font = Enum.Font.GothamMedium
+HubState.CoinFarmStatus.TextSize = 8
+HubState.CoinFarmStatus.TextColor3 = Color3.fromRGB(255, 255, 255)
+HubState.CoinFarmStatus.TextXAlignment = Enum.TextXAlignment.Left
+HubState.CoinFarmStatus.Visible = false
+HubState.CoinFarmStatus.Parent = HubState.MM2Page
+table.insert(ThemeObjects.Texts, HubState.CoinFarmStatus)
+
+HubState.CoinFarmEnabled = false
+HubState.CoinFarmConnection = nil
+HubState.LastCoinRefresh = 0
+HubState.CachedCoins = {}
+HubState.CurrentCoin = nil
+HubState.CurrentCoinStartedAt = 0
+HubState.CoinCollectionTimeout = 0.55
+HubState.SkippedCoins = {}
+HubState.AutoGunPickupBusy = false
+
+local function GetAllCoins()
+	local now = os.clock()
+	if now - HubState.LastCoinRefresh < 0.15 then
+		return HubState.CachedCoins
+	end
+	HubState.LastCoinRefresh = now
+	HubState.CachedCoins = {}
+	local coinContainers = {}
+	local directContainer = workspace:FindFirstChild("CoinContainer", true)
+	if directContainer then table.insert(coinContainers, directContainer) end
+	for _, obj in ipairs(workspace:GetChildren()) do
+		local container = obj:FindFirstChild("CoinContainer")
+		if container and container ~= directContainer then table.insert(coinContainers, container) end
+	end
+	for _, container in ipairs(coinContainers) do
+		for _, obj in ipairs(container:GetChildren()) do
+			if obj:IsA("BasePart") and obj.Name == "Coin_Server" then
+				table.insert(HubState.CachedCoins, obj)
+			end
+		end
+	end
+	return HubState.CachedCoins
+end
+
+local function EnableUndergroundMode(root)
+	if not root then return end
+	root.CanCollide = false
+	for _, part in pairs(Player.Character:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.CanCollide = false
+		end
+	end
+end
+
+local function StartCoinFarm()
+	if HubState.CoinFarmConnection then HubState.CoinFarmConnection:Disconnect() end
+	HubState.CurrentCoin = nil
+	HubState.CurrentCoinStartedAt = 0
+	HubState.SkippedCoins = {}
+	
+	HubState.CoinFarmConnection = RunService.Heartbeat:Connect(function()
+		if not HubState.CoinFarmEnabled then return end
+		if HubState.AutoGunPickupBusy then return end
+		local now = os.clock()
+		if now - (HubState.LastCoinFarmMove or 0) < 0.045 then return end
+		HubState.LastCoinFarmMove = now
+		
+		local coins = GetAllCoins()
+		if #coins == 0 then
+			HubState.CoinFarmStatus.Text = "0"
+			return
+		end
+		
+		local root = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+		if not root then return end
+		local availableCoins = {}
+		for _, coin in ipairs(coins) do
+			local skipUntil = HubState.SkippedCoins[coin]
+			if not skipUntil or now >= skipUntil then
+				HubState.SkippedCoins[coin] = nil
+				table.insert(availableCoins, coin)
+			end
+		end
+
+		if #availableCoins == 0 then
+			HubState.CoinFarmStatus.Text = tostring(#coins)
+			return
+		end
+		
+		table.sort(availableCoins, function(a, b)
+			return (root.Position - a.Position).Magnitude < (root.Position - b.Position).Magnitude
+		end)
+		
+		local target = availableCoins[1]
+		if target and target.Parent then
+			if HubState.CurrentCoin ~= target then
+				HubState.CurrentCoin = target
+				HubState.CurrentCoinStartedAt = now
+			elseif now - HubState.CurrentCoinStartedAt >= HubState.CoinCollectionTimeout then
+				HubState.SkippedCoins[target] = now + 4
+				HubState.CurrentCoin = nil
+				HubState.CoinFarmStatus.Text = tostring(#coins)
+				return
+			end
+
+			HubState.CoinFarmStatus.Text = tostring(#coins)
+			ThemeObjects.SetRootUpright(root, root.CFrame, target.Position + Vector3.new(0, 0.8, 0))
+			root.AssemblyLinearVelocity = Vector3.zero
+			root.AssemblyAngularVelocity = Vector3.zero
+		end
+	end)
+end
+
+local function ToggleCoinFarm()
+	HubState.CoinFarmEnabled = not HubState.CoinFarmEnabled
+	HubState.CoinFarmToggle.Text = HubState.CoinFarmEnabled and "On" or "Off"
+	HubState.CoinFarmTitle.TextColor3 = HubState.CoinFarmEnabled and AccentColor or InactiveTextColor()
+	
+	if HubState.CoinFarmEnabled then
+		HubState.CoinFarmStatus.Text = "0"
+		local root = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+		if root then EnableUndergroundMode(root) end
+		StartCoinFarm()
+	else
+		HubState.CoinFarmStatus.Text = "0"
+		if HubState.CoinFarmConnection then
+			HubState.CoinFarmConnection:Disconnect()
+			HubState.CoinFarmConnection = nil
+		end
+		local root = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+		if root and Player.Character then
+			root.CanCollide = true
+			for _, part in pairs(Player.Character:GetDescendants()) do
+				if part:IsA("BasePart") then part.CanCollide = true end
+			end
+		end
+	end
+end
+
+HubState.CoinFarmToggle.MouseButton1Click:Connect(function()
+	PlayClick()
+	ToggleCoinFarm()
+end)
+
+HubState.AutoGunTitle = Instance.new("TextLabel")
+HubState.AutoGunTitle.Size = UDim2.new(0, 56, 0, 17)
+HubState.AutoGunTitle.Position = UDim2.new(0, 176, 0, 94)
+HubState.AutoGunTitle.BackgroundTransparency = 1
+HubState.AutoGunTitle.Text = "Auto Gun:"
+HubState.AutoGunTitle.Font = Enum.Font.GothamBold
+HubState.AutoGunTitle.TextSize = 10
+HubState.AutoGunTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+HubState.AutoGunTitle.TextXAlignment = Enum.TextXAlignment.Left
+HubState.AutoGunTitle.Parent = HubState.MM2Page
+table.insert(ThemeObjects.Texts, HubState.AutoGunTitle)
+
+HubState.AutoGunToggle = Instance.new("TextButton")
+HubState.AutoGunToggle.Size = UDim2.new(0, 32, 0, 17)
+HubState.AutoGunToggle.Position = UDim2.new(0, 240, 0, 94)
+HubState.AutoGunToggle.BackgroundColor3 = Color3.fromRGB(50, 50, 68)
+HubState.AutoGunToggle.BackgroundTransparency = 0.8
+HubState.AutoGunToggle.BorderSizePixel = 0
+HubState.AutoGunToggle.Text = "Off"
+HubState.AutoGunToggle.Font = Enum.Font.GothamBold
+HubState.AutoGunToggle.Parent = HubState.MM2Page
+table.insert(ThemeObjects.Backgrounds, HubState.AutoGunToggle)
+table.insert(ThemeObjects.Texts, HubState.AutoGunToggle)
+Instance.new("UICorner", HubState.AutoGunToggle).CornerRadius = UDim.new(0, 4)
+
+HubState.GunDropESP = {Enabled = false, Highlight = nil, Adornee = nil, LastCheck = 0}
+
+HubState.AutoGunPickupEnabled = false
+HubState.LastGunDrop = nil
+HubState.GunPickupDelay = 0
+
+local function FindGunDrop()
+	local nestedGunDrop = workspace:FindFirstChild("GunDrop", true)
+	if nestedGunDrop and (nestedGunDrop:IsA("BasePart") or nestedGunDrop:IsA("Model")) then
+		return nestedGunDrop
+	end
+	for _, map in ipairs(workspace:GetChildren()) do
+		local gunDrop = map:FindFirstChild("GunDrop")
+		if gunDrop then return gunDrop end
+	end
+	return nil
+end
+
+function HubState.GunDropESP.Clear()
+	if HubState.GunDropESP.Highlight then HubState.GunDropESP.Highlight:Destroy() end
+	if HubState.GunDropESP.Label then HubState.GunDropESP.Label:Destroy() end
+	HubState.GunDropESP.Highlight = nil
+	HubState.GunDropESP.Label = nil
+	HubState.GunDropESP.Adornee = nil
+end
+
+function HubState.GunDropESP.Refresh()
+	if not HubState.GunDropESP.Enabled then
+		HubState.GunDropESP.Clear()
+		return
+	end
+
+	local gunDrop = FindGunDrop()
+	if not gunDrop or not gunDrop.Parent then
+		HubState.GunDropESP.Clear()
+		return
+	end
+	if gunDrop == HubState.GunDropESP.Adornee and HubState.GunDropESP.Highlight and HubState.GunDropESP.Highlight.Parent then return end
+
+	HubState.GunDropESP.Clear()
+	HubState.GunDropESP.Adornee = gunDrop
+	HubState.GunDropESP.Highlight = Instance.new("Highlight")
+	HubState.GunDropESP.Highlight.Name = "HqydeuGunDropESP"
+	HubState.GunDropESP.Highlight.Adornee = gunDrop
+	HubState.GunDropESP.Highlight.FillColor = Color3.fromRGB(255, 205, 65)
+	HubState.GunDropESP.Highlight.FillTransparency = 0.18
+	HubState.GunDropESP.Highlight.OutlineColor = Color3.fromRGB(255, 245, 190)
+	HubState.GunDropESP.Highlight.OutlineTransparency = 0
+	HubState.GunDropESP.Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+	HubState.GunDropESP.Highlight.Parent = gunDrop
+
+	local labelPart = gunDrop:IsA("BasePart") and gunDrop or gunDrop:FindFirstChildWhichIsA("BasePart", true)
+	if labelPart then
+		HubState.GunDropESP.Label = Instance.new("BillboardGui")
+		HubState.GunDropESP.Label.Name = "HqydeuGunDropLabel"
+		HubState.GunDropESP.Label.Adornee = labelPart
+		HubState.GunDropESP.Label.Size = UDim2.new(0, 82, 0, 34)
+		HubState.GunDropESP.Label.StudsOffsetWorldSpace = Vector3.new(0, 2.8, 0)
+		HubState.GunDropESP.Label.AlwaysOnTop = true
+		HubState.GunDropESP.Label.Parent = gunDrop
+		local labelText = Instance.new("TextLabel")
+		labelText.Size = UDim2.new(1, 0, 1, 0)
+		labelText.BackgroundTransparency = 1
+		labelText.Text = "Gun"
+		labelText.Font = Enum.Font.GothamBold
+		labelText.TextSize = 12
+		labelText.TextColor3 = Color3.fromRGB(255, 225, 60)
+		labelText.TextStrokeColor3 = Color3.fromRGB(25, 25, 25)
+		labelText.TextStrokeTransparency = 0.2
+		labelText.Parent = HubState.GunDropESP.Label
+	end
+end
+
+HubState.Connections.GunDropESP = RunService.Heartbeat:Connect(function()
+	if os.clock() - HubState.GunDropESP.LastCheck < 0.2 then return end
+	HubState.GunDropESP.LastCheck = os.clock()
+	local deepESPEnabled = ThemeObjects.DeepESP and ThemeObjects.DeepESP.Enabled
+	local regularESPEnabled = HubState.ESPEnabled or deepESPEnabled
+	local mm2GunESPEnabled = game.PlaceId == 142823291 and (regularESPEnabled or HubState.MM2ESPEnabled or HubState.MurdererRoleESPEnabled or HubState.SheriffRoleESPEnabled)
+	HubState.GunDropESP.Enabled = mm2GunESPEnabled
+	HubState.GunDropESP.Refresh()
+end)
+
+local function GetGunDropCFrame(gunDrop)
+	if gunDrop:IsA("BasePart") then
+		return gunDrop.CFrame
+	elseif gunDrop:IsA("Model") then
+		local part = gunDrop.PrimaryPart or gunDrop:FindFirstChildWhichIsA("BasePart", true)
+		return part and part.CFrame or nil
+	end
+	return nil
+end
+
+local function GetGunDropTouchPart(gunDrop)
+	if not gunDrop then return nil end
+	if gunDrop:IsA("BasePart") then return gunDrop end
+	if gunDrop:IsA("Model") then
+		return gunDrop.PrimaryPart or gunDrop:FindFirstChildWhichIsA("BasePart", true)
+	end
+	return nil
+end
+
+local function GetTopLevelWorkspaceObject(instance)
+	local current = instance
+	while current and current.Parent and current.Parent ~= workspace do
+		current = current.Parent
+	end
+	return current
+end
+
+local function IsAliveAndInsideActiveMap(gunDrop)
+	local character = Player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not humanoid or humanoid.Health <= 0 or not root then return false end
+
+	local map = GetTopLevelWorkspaceObject(gunDrop)
+	if not map or map.Parent ~= workspace then return false end
+
+	if map:IsA("Model") then
+		local mapCFrame, mapSize = map:GetBoundingBox()
+		local localPosition = mapCFrame:PointToObjectSpace(root.Position)
+		local padding = Vector3.new(20, 20, 20)
+		local halfSize = (mapSize / 2) + padding
+		return math.abs(localPosition.X) <= halfSize.X
+			and math.abs(localPosition.Y) <= halfSize.Y
+			and math.abs(localPosition.Z) <= halfSize.Z
+	end
+
+	return true
+end
+
+function HubState.IsGunPickupSafe(gunPosition)
+	if ThemeObjects.RefreshMM2RolesFromTools then ThemeObjects.RefreshMM2RolesFromTools() end
+	local murderer = HubState.CurrentMurderer
+	if not murderer or murderer == Player then return true end
+	local murdererCharacter = murderer.Character
+	local murdererHumanoid = murdererCharacter and murdererCharacter:FindFirstChildOfClass("Humanoid")
+	local murdererRoot = murdererCharacter and murdererCharacter:FindFirstChild("HumanoidRootPart")
+	if not murdererRoot or not murdererHumanoid or murdererHumanoid.Health <= 0 then return true end
+	return (murdererRoot.Position - gunPosition).Magnitude >= 30
+end
+
+local function TryPickUpGun(gunDrop)
+	if HubState.AutoGunPickupBusy or not HubState.AutoGunPickupEnabled or not gunDrop or not gunDrop.Parent then return end
+	if not IsAliveAndInsideActiveMap(gunDrop) then return end
+	local root = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+	local gunCFrame = GetGunDropCFrame(gunDrop)
+	if not root or not gunCFrame then return end
+	if not HubState.IsGunPickupSafe(gunCFrame.Position) then return end
+
+	HubState.AutoGunPickupBusy = true
+	local touchPart = GetGunDropTouchPart(gunDrop)
+	if touchPart and type(firetouchinterest) == "function" then
+		local character = Player.Character
+		local touched = false
+		if character then
+			for _, part in ipairs(character:GetDescendants()) do
+				if part:IsA("BasePart") then
+					pcall(function()
+						firetouchinterest(part, touchPart, 0)
+						firetouchinterest(part, touchPart, 1)
+						touched = true
+					end)
+				end
+			end
+		end
+		if touched then
+			task.delay(0.12, function()
+				HubState.AutoGunPickupBusy = false
+			end)
+			return
+		end
+	end
+	task.wait(0.08)
+	if not HubState.AutoGunPickupEnabled or not gunDrop.Parent or not root.Parent or not HubState.IsGunPickupSafe(gunCFrame.Position) then
+		HubState.AutoGunPickupBusy = false
+		return
+	end
+	local originalCFrame = root.CFrame
+	ThemeObjects.SetRootUpright(root, root.CFrame, gunCFrame.Position + Vector3.new(0, 1.2, 0))
+	root.AssemblyLinearVelocity = Vector3.zero
+	root.AssemblyAngularVelocity = Vector3.zero
+	task.wait(0.045)
+	if root and root.Parent then
+		ThemeObjects.SetRootUpright(root, root.CFrame, originalCFrame.Position)
+		root.AssemblyLinearVelocity = Vector3.zero
+		root.AssemblyAngularVelocity = Vector3.zero
+	end
+	HubState.AutoGunPickupBusy = false
+end
+
+local function SetAutoGunPickupEnabled(enabled)
+	HubState.AutoGunPickupEnabled = enabled
+	HubState.AutoGunToggle.Text = enabled and "On" or "Off"
+	HubState.AutoGunTitle.TextColor3 = enabled and AccentColor or InactiveTextColor()
+	HubState.LastGunDrop = nil
+	HubState.LastGunPickupAttempt = nil
+	if enabled then
+		task.defer(function()
+			local gunDrop = FindGunDrop()
+			if gunDrop and gunDrop.Parent then
+				HubState.LastGunDrop = gunDrop
+				HubState.LastGunPickupAttempt = os.clock()
+				TryPickUpGun(gunDrop)
+			end
+		end)
+	end
+end
+
+HubState.LastGunDropSearch = 0
+HubState.Connections.AutoGunPickup = RunService.Heartbeat:Connect(function()
+	if not HubState.AutoGunPickupEnabled or HubState.AutoGunPickupBusy then return end
+	-- The recursive workspace search in FindGunDrop is expensive to run every frame;
+	-- the gun drop's identity is stable within a round, so a short cache is safe.
+	if os.clock() - HubState.LastGunDropSearch >= 0.15 then
+		HubState.LastGunDropSearch = os.clock()
+		HubState.CachedGunDrop = FindGunDrop()
+	end
+	local gunDrop = HubState.CachedGunDrop
+	if not gunDrop then
+		HubState.LastGunDrop = nil
+		return
+	end
+
+	if gunDrop ~= HubState.LastGunDrop then
+		HubState.LastGunDrop = gunDrop
+		HubState.LastGunPickupAttempt = 0
+	end
+
+	if os.clock() - (HubState.LastGunPickupAttempt or 0) >= 0.25 then
+		HubState.LastGunPickupAttempt = os.clock()
+		task.delay(HubState.GunPickupDelay, function()
+			if HubState.LastGunDrop == gunDrop then
+				TryPickUpGun(gunDrop)
+			end
+		end)
+	end
+end)
+
+HubState.AutoGunToggle.MouseButton1Click:Connect(function()
+	PlayClick()
+	SetAutoGunPickupEnabled(not HubState.AutoGunPickupEnabled)
+end)
+
+HubState.KillTitle = Instance.new("TextLabel")
+HubState.KillTitle.Size = UDim2.new(0, 60, 0, 17)
+HubState.KillTitle.Position = UDim2.new(0, 12, 0, 70)
+HubState.KillTitle.BackgroundTransparency = 1
+HubState.KillTitle.Text = "Auto Stab:"
+HubState.KillTitle.Font = Enum.Font.GothamBold
+HubState.KillTitle.TextSize = 10
+HubState.KillTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+HubState.KillTitle.TextXAlignment = Enum.TextXAlignment.Left
+HubState.KillTitle.Parent = HubState.MM2Page
+table.insert(ThemeObjects.Texts, HubState.KillTitle)
+
+HubState.KillToggle = Instance.new("TextButton")
+HubState.KillToggle.Size = UDim2.new(0, 32, 0, 17)
+HubState.KillToggle.Position = UDim2.new(0, 80, 0, 70)
+HubState.KillToggle.BackgroundColor3 = Color3.fromRGB(50, 50, 68)
+HubState.KillToggle.BackgroundTransparency = 0.8
+HubState.KillToggle.BorderSizePixel = 0
+HubState.KillToggle.Text = "Off"
+HubState.KillToggle.Font = Enum.Font.GothamBold
+HubState.KillToggle.Parent = HubState.MM2Page
+table.insert(ThemeObjects.Backgrounds, HubState.KillToggle)
+table.insert(ThemeObjects.Texts, HubState.KillToggle)
+Instance.new("UICorner", HubState.KillToggle).CornerRadius = UDim.new(0, 4)
+
+HubState.KillEnabled = false
+HubState.KillHitboxOriginals = {}
+HubState.LastKnifeSwing = 0
+HubState.StabTargetIndex = 0
+
+HubState.MurdererAvatar = Instance.new("ImageLabel")
+HubState.MurdererAvatar.Size = UDim2.new(0, 58, 0, 58)
+HubState.MurdererAvatar.Position = UDim2.new(0, 8, 0, 5)
+HubState.MurdererAvatar.BackgroundColor3 = Color3.fromRGB(50, 50, 68)
+HubState.MurdererAvatar.BackgroundTransparency = 0.8
+HubState.MurdererAvatar.BorderSizePixel = 0
+HubState.MurdererAvatar.Image = ""
+HubState.MurdererAvatar.Parent = HubState.MM2Page
+Instance.new("UICorner", HubState.MurdererAvatar).CornerRadius = UDim.new(0, 7)
+HubState.MurdererAvatarStroke = Instance.new("UIStroke")
+HubState.MurdererAvatarStroke.Name = "ControlOutline"
+HubState.MurdererAvatarStroke.Color = Color3.fromRGB(0, 0, 0)
+HubState.MurdererAvatarStroke.Thickness = 1
+HubState.MurdererAvatarStroke.Transparency = 0.18
+HubState.MurdererAvatarStroke.Parent = HubState.MurdererAvatar
+
+HubState.SheriffAvatar = Instance.new("ImageLabel")
+HubState.SheriffAvatar.Size = UDim2.new(0, 58, 0, 58)
+HubState.SheriffAvatar.Position = UDim2.new(0, 168, 0, 5)
+HubState.SheriffAvatar.BackgroundColor3 = Color3.fromRGB(50, 50, 68)
+HubState.SheriffAvatar.BackgroundTransparency = 0.8
+HubState.SheriffAvatar.BorderSizePixel = 0
+HubState.SheriffAvatar.Image = ""
+HubState.SheriffAvatar.Parent = HubState.MM2Page
+Instance.new("UICorner", HubState.SheriffAvatar).CornerRadius = UDim.new(0, 7)
+HubState.SheriffAvatarStroke = Instance.new("UIStroke")
+HubState.SheriffAvatarStroke.Name = "ControlOutline"
+HubState.SheriffAvatarStroke.Color = Color3.fromRGB(0, 0, 0)
+HubState.SheriffAvatarStroke.Thickness = 1
+HubState.SheriffAvatarStroke.Transparency = 0.18
+HubState.SheriffAvatarStroke.Parent = HubState.SheriffAvatar
+
+HubState.MurdererRoleLabel = Instance.new("TextLabel")
+HubState.MurdererRoleHeader = Instance.new("TextLabel")
+HubState.MurdererRoleHeader.Size = UDim2.new(0, 90, 0, 11)
+HubState.MurdererRoleHeader.Position = UDim2.new(0, 72, 0, 3)
+HubState.MurdererRoleHeader.BackgroundTransparency = 1
+HubState.MurdererRoleHeader.Text = "MURDERER"
+HubState.MurdererRoleHeader.Font = Enum.Font.GothamBold
+HubState.MurdererRoleHeader.TextSize = 8
+HubState.MurdererRoleHeader.TextColor3 = Color3.fromRGB(255, 90, 90)
+HubState.MurdererRoleHeader.TextXAlignment = Enum.TextXAlignment.Left
+HubState.MurdererRoleHeader.Parent = HubState.MM2Page
+
+HubState.MurdererRoleLabel.Size = UDim2.new(0, 90, 0, 30)
+HubState.MurdererRoleLabel.Position = UDim2.new(0, 72, 0, 16)
+HubState.MurdererRoleLabel.BackgroundTransparency = 1
+HubState.MurdererRoleLabel.Text = "Unknown"
+HubState.MurdererRoleLabel.Font = Enum.Font.GothamBold
+HubState.MurdererRoleLabel.TextSize = 11
+HubState.MurdererRoleLabel.TextColor3 = Color3.fromRGB(255, 90, 90)
+HubState.MurdererRoleLabel.TextWrapped = true
+HubState.MurdererRoleLabel.TextXAlignment = Enum.TextXAlignment.Left
+HubState.MurdererRoleLabel.Parent = HubState.MM2Page
+
+HubState.SheriffRoleLabel = Instance.new("TextLabel")
+HubState.SheriffRoleHeader = Instance.new("TextLabel")
+HubState.SheriffRoleHeader.Size = UDim2.new(0, 90, 0, 11)
+HubState.SheriffRoleHeader.Position = UDim2.new(0, 232, 0, 3)
+HubState.SheriffRoleHeader.BackgroundTransparency = 1
+HubState.SheriffRoleHeader.Text = "SHERIFF"
+HubState.SheriffRoleHeader.Font = Enum.Font.GothamBold
+HubState.SheriffRoleHeader.TextSize = 8
+HubState.SheriffRoleHeader.TextColor3 = Color3.fromRGB(90, 150, 255)
+HubState.SheriffRoleHeader.TextXAlignment = Enum.TextXAlignment.Left
+HubState.SheriffRoleHeader.Parent = HubState.MM2Page
+
+HubState.SheriffRoleLabel.Size = UDim2.new(0, 90, 0, 30)
+HubState.SheriffRoleLabel.Position = UDim2.new(0, 232, 0, 16)
+HubState.SheriffRoleLabel.BackgroundTransparency = 1
+HubState.SheriffRoleLabel.Text = "Unknown"
+HubState.SheriffRoleLabel.Font = Enum.Font.GothamBold
+HubState.SheriffRoleLabel.TextSize = 11
+HubState.SheriffRoleLabel.TextColor3 = Color3.fromRGB(90, 150, 255)
+HubState.SheriffRoleLabel.TextWrapped = true
+HubState.SheriffRoleLabel.TextXAlignment = Enum.TextXAlignment.Left
+HubState.SheriffRoleLabel.Parent = HubState.MM2Page
+
+HubState.MurdererESPBtn = Instance.new("TextButton")
+HubState.MurdererESPBtn.Size = UDim2.new(0, 50, 0, 19)
+HubState.MurdererESPBtn.Position = UDim2.new(0, 72, 0, 43)
+HubState.MurdererESPBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 68)
+HubState.MurdererESPBtn.BackgroundTransparency = 0.8
+HubState.MurdererESPBtn.BorderSizePixel = 0
+HubState.MurdererESPBtn.Text = "ESP"
+HubState.MurdererESPBtn.Font = Enum.Font.GothamBold
+HubState.MurdererESPBtn.TextSize = 9
+HubState.MurdererESPBtn.TextColor3 = Color3.fromRGB(255, 90, 90)
+HubState.MurdererESPBtn.Parent = HubState.MM2Page
+table.insert(ThemeObjects.Backgrounds, HubState.MurdererESPBtn)
+Instance.new("UICorner", HubState.MurdererESPBtn).CornerRadius = UDim.new(0, 3)
+HubState.MurdererESPBtn.Visible = false
+
+HubState.SheriffESPBtn = Instance.new("TextButton")
+HubState.SheriffESPBtn.Size = UDim2.new(0, 50, 0, 19)
+HubState.SheriffESPBtn.Position = UDim2.new(0, 232, 0, 43)
+HubState.SheriffESPBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 68)
+HubState.SheriffESPBtn.BackgroundTransparency = 0.8
+HubState.SheriffESPBtn.BorderSizePixel = 0
+HubState.SheriffESPBtn.Text = "ESP"
+HubState.SheriffESPBtn.Font = Enum.Font.GothamBold
+HubState.SheriffESPBtn.TextSize = 9
+HubState.SheriffESPBtn.TextColor3 = Color3.fromRGB(90, 150, 255)
+HubState.SheriffESPBtn.Parent = HubState.MM2Page
+table.insert(ThemeObjects.Backgrounds, HubState.SheriffESPBtn)
+Instance.new("UICorner", HubState.SheriffESPBtn).CornerRadius = UDim.new(0, 3)
+HubState.SheriffESPBtn.Visible = false
+
+HubState.MM2RoleDetailsButton = Instance.new("TextButton")
+HubState.MM2RoleDetailsButton.Name = "MM2RoleDetailsButton"
+HubState.MM2RoleDetailsButton.Size = UDim2.new(0, 70, 0, 23)
+HubState.MM2RoleDetailsButton.Position = UDim2.new(0, 0, 0, 0)
+HubState.MM2RoleDetailsButton.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
+HubState.MM2RoleDetailsButton.BackgroundTransparency = 0.8
+HubState.MM2RoleDetailsButton.BorderSizePixel = 0
+HubState.MM2RoleDetailsButton.Text = "Role Info"
+HubState.MM2RoleDetailsButton.Font = Enum.Font.GothamBold
+HubState.MM2RoleDetailsButton.TextSize = 10
+HubState.MM2RoleDetailsButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+HubState.MM2RoleDetailsButton.Parent = HubState.MM2Page
+table.insert(ThemeObjects.Backgrounds, HubState.MM2RoleDetailsButton)
+table.insert(ThemeObjects.Texts, HubState.MM2RoleDetailsButton)
+Instance.new("UICorner", HubState.MM2RoleDetailsButton).CornerRadius = UDim.new(0, 4)
+
+HubState.MM2RoleDetailsBindButton = Instance.new("TextButton")
+HubState.MM2RoleDetailsBindButton.Name = "MM2RoleDetailsBindButton"
+HubState.MM2RoleDetailsBindButton.Size = UDim2.new(0, 46, 0, 22)
+HubState.MM2RoleDetailsBindButton.Position = UDim2.new(0, 0, 0, 0)
+HubState.MM2RoleDetailsBindButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+HubState.MM2RoleDetailsBindButton.BackgroundTransparency = 0.8
+HubState.MM2RoleDetailsBindButton.BorderSizePixel = 0
+HubState.MM2RoleDetailsBindButton.Text = KeybindText(ThemeObjects.MM2RoleDetails.Keybind)
+HubState.MM2RoleDetailsBindButton.Font = Enum.Font.GothamBold
+HubState.MM2RoleDetailsBindButton.TextSize = 9
+HubState.MM2RoleDetailsBindButton.TextColor3 = AccentColor
+HubState.MM2RoleDetailsBindButton.Parent = HubState.MM2Page
+table.insert(ThemeObjects.Backgrounds, HubState.MM2RoleDetailsBindButton)
+table.insert(ThemeObjects.Accents, HubState.MM2RoleDetailsBindButton)
+Instance.new("UICorner", HubState.MM2RoleDetailsBindButton).CornerRadius = UDim.new(0, 5)
+ThemeObjects.EnsureKeybindOutline(HubState.MM2RoleDetailsBindButton)
+
+HubState.MM2RoleDetailsPanel = Instance.new("Frame")
+HubState.MM2RoleDetailsPanel.Name = "MM2RoleDetailsPanel"
+HubState.MM2RoleDetailsPanel.Size = UDim2.new(0, 210, 0, 175)
+HubState.MM2RoleDetailsPanel.Position = UDim2.new(0.5, -105, 0.5, -88)
+HubState.MM2RoleDetailsPanel.BackgroundColor3 = Color3.fromRGB(14, 18, 26)
+HubState.MM2RoleDetailsPanel.BackgroundTransparency = 0.18
+HubState.MM2RoleDetailsPanel.BorderSizePixel = 0
+HubState.MM2RoleDetailsPanel.Visible = false
+HubState.MM2RoleDetailsPanel.ZIndex = 80
+HubState.MM2RoleDetailsPanel.Parent = ScreenGui
+table.insert(ThemeObjects.Backgrounds, HubState.MM2RoleDetailsPanel)
+Instance.new("UICorner", HubState.MM2RoleDetailsPanel).CornerRadius = UDim.new(0, 10)
+ThemeObjects.MM2RoleDetailsScale = Instance.new("UIScale")
+ThemeObjects.MM2RoleDetailsScale.Scale = GuiScaleFromValue(GuiSizeValue)
+ThemeObjects.MM2RoleDetailsScale.Parent = HubState.MM2RoleDetailsPanel
+ThemeObjects.MM2RoleDetailsGradient = Instance.new("UIGradient")
+ThemeObjects.MM2RoleDetailsGradient.Rotation = 135
+ThemeObjects.MM2RoleDetailsGradient.Parent = HubState.MM2RoleDetailsPanel
+local detailsStroke = Instance.new("UIStroke")
+detailsStroke.Name = "ControlOutline"
+detailsStroke.Color = AccentColor
+detailsStroke.Thickness = 1
+detailsStroke.Transparency = 0.35
+detailsStroke.Parent = HubState.MM2RoleDetailsPanel
+table.insert(ThemeObjects.Accents, detailsStroke)
+
+ThemeObjects.UpdateMM2RoleDetailsPosition = function()
+	if not ThemeObjects.MM2RoleDetails.Moved then
+		HubState.MM2RoleDetailsPanel.Position = UDim2.new(0.5, -105, 0.5, -88)
+	end
+end
+ThemeObjects.UpdateMM2RoleDetailsPosition()
+
+HubState.MM2RoleDetailsHeader = Instance.new("TextLabel")
+HubState.MM2RoleDetailsHeader.Size = UDim2.new(1, -34, 0, 28)
+HubState.MM2RoleDetailsHeader.Position = UDim2.new(0, 10, 0, 0)
+HubState.MM2RoleDetailsHeader.BackgroundTransparency = 1
+HubState.MM2RoleDetailsHeader.Text = "MM2 Roles"
+HubState.MM2RoleDetailsHeader.Font = Enum.Font.GothamBold
+HubState.MM2RoleDetailsHeader.TextSize = 13
+HubState.MM2RoleDetailsHeader.TextXAlignment = Enum.TextXAlignment.Left
+HubState.MM2RoleDetailsHeader.ZIndex = 81
+HubState.MM2RoleDetailsHeader.Parent = HubState.MM2RoleDetailsPanel
+table.insert(ThemeObjects.Texts, HubState.MM2RoleDetailsHeader)
+
+HubState.MM2RoleDetailsClose = Instance.new("TextButton")
+HubState.MM2RoleDetailsClose.Size = UDim2.new(0, 20, 0, 20)
+HubState.MM2RoleDetailsClose.Position = UDim2.new(1, -26, 0, 4)
+HubState.MM2RoleDetailsClose.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+HubState.MM2RoleDetailsClose.BackgroundTransparency = 0.8
+HubState.MM2RoleDetailsClose.BorderSizePixel = 0
+HubState.MM2RoleDetailsClose.Text = "×"
+HubState.MM2RoleDetailsClose.Font = Enum.Font.GothamBold
+HubState.MM2RoleDetailsClose.ZIndex = 81
+HubState.MM2RoleDetailsClose.Parent = HubState.MM2RoleDetailsPanel
+table.insert(ThemeObjects.Backgrounds, HubState.MM2RoleDetailsClose)
+table.insert(ThemeObjects.Texts, HubState.MM2RoleDetailsClose)
+Instance.new("UICorner", HubState.MM2RoleDetailsClose).CornerRadius = UDim.new(0, 4)
+
+local function CreateMM2RoleDetailRow(y, title, color)
+	local row = Instance.new("Frame")
+	row.Size = UDim2.new(1, -16, 0, 60)
+	row.Position = UDim2.new(0, 8, 0, y)
+	row.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+	row.BackgroundTransparency = 0.8
+	row.BorderSizePixel = 0
+	row.ZIndex = 81
+	row.Parent = HubState.MM2RoleDetailsPanel
+	table.insert(ThemeObjects.Backgrounds, row)
+	Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
+	local rowStroke = Instance.new("UIStroke")
+	rowStroke.Name = "ControlOutline"
+	rowStroke.Color = Color3.fromRGB(0, 0, 0)
+	rowStroke.Thickness = 1
+	rowStroke.Transparency = 0.18
+	rowStroke.Parent = row
+	local avatar = Instance.new("ImageLabel")
+	avatar.Size = UDim2.new(0, 46, 0, 46)
+	avatar.Position = UDim2.new(0, 7, 0, 7)
+	avatar.BackgroundColor3 = Color3.fromRGB(50, 50, 68)
+	avatar.BackgroundTransparency = 0.8
+	avatar.BorderSizePixel = 0
+	avatar.ZIndex = 82
+	avatar.Parent = row
+	Instance.new("UICorner", avatar).CornerRadius = UDim.new(0, 6)
+	local header = Instance.new("TextLabel")
+	header.Size = UDim2.new(1, -60, 0, 14)
+	header.Position = UDim2.new(0, 62, 0, 7)
+	header.BackgroundTransparency = 1
+	header.Text = title
+	header.Font = Enum.Font.GothamBold
+	header.TextSize = 9
+	header.TextColor3 = color
+	header.TextXAlignment = Enum.TextXAlignment.Left
+	header.ZIndex = 82
+	header.Parent = row
+	local nameLabel = Instance.new("TextLabel")
+	nameLabel.Size = UDim2.new(1, -60, 0, 30)
+	nameLabel.Position = UDim2.new(0, 62, 0, 22)
+	nameLabel.BackgroundTransparency = 1
+	nameLabel.Text = "Unknown"
+	nameLabel.Font = Enum.Font.GothamBold
+	nameLabel.TextSize = 10
+	nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	nameLabel.TextWrapped = true
+	nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+	nameLabel.ZIndex = 82
+	nameLabel.Parent = row
+	return avatar, nameLabel
+end
+
+HubState.MM2RoleDetailsMurdererAvatar, HubState.MM2RoleDetailsMurdererName = CreateMM2RoleDetailRow(36, "MURDERER", Color3.fromRGB(255, 90, 90))
+HubState.MM2RoleDetailsSheriffAvatar, HubState.MM2RoleDetailsSheriffName = CreateMM2RoleDetailRow(104, "SHERIFF", Color3.fromRGB(90, 150, 255))
+
+ThemeObjects.RefreshMM2RoleDetails = function()
+	local function detailName(targetPlayer)
+		if not targetPlayer then return "Unknown" end
+		return string.format("%s (@%s)", targetPlayer.DisplayName or targetPlayer.Name, targetPlayer.Name)
+	end
+	if HubState.MM2RoleDetailsMurdererAvatar then HubState.MM2RoleDetailsMurdererAvatar.Image = HubState.MurdererAvatar.Image end
+	if HubState.MM2RoleDetailsSheriffAvatar then HubState.MM2RoleDetailsSheriffAvatar.Image = HubState.SheriffAvatar.Image end
+	if HubState.MM2RoleDetailsMurdererName then HubState.MM2RoleDetailsMurdererName.Text = detailName(HubState.CurrentMurderer) end
+	if HubState.MM2RoleDetailsSheriffName then HubState.MM2RoleDetailsSheriffName.Text = detailName(HubState.CurrentSheriff) end
+end
+
+ThemeObjects.MM2RoleDetails.Toggle = function(playSound)
+	if playSound ~= false then PlaySwoosh() end
+	if not HubState.MM2RoleDetailsPanel.Visible and ThemeObjects.RefreshMM2RoleDetails then ThemeObjects.RefreshMM2RoleDetails() end
+	HubState.MM2RoleDetailsPanel.Visible = not HubState.MM2RoleDetailsPanel.Visible
+end
+
+HubState.MM2RoleDetailsButton.MouseButton1Click:Connect(function()
+	PlayClick()
+	ThemeObjects.MM2RoleDetails.Toggle()
+end)
+HubState.MM2RoleDetailsClose.MouseButton1Click:Connect(function()
+	PlaySwoosh()
+	HubState.MM2RoleDetailsPanel.Visible = false
+end)
+
+HubState.MM2RoleDetailsHeader.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		ThemeObjects.MM2RoleDetails.Dragging = true
+		ThemeObjects.MM2RoleDetails.Moved = true
+		ThemeObjects.MM2RoleDetails.DragStart = input.Position
+		ThemeObjects.MM2RoleDetails.StartPosition = HubState.MM2RoleDetailsPanel.Position
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then ThemeObjects.MM2RoleDetails.Dragging = false end
+		end)
+	end
+end)
+TrackConnection("MM2RoleDetailsDragMove", UserInputService.InputChanged:Connect(function(input)
+	if ThemeObjects.MM2RoleDetails.Dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+		local delta = input.Position - ThemeObjects.MM2RoleDetails.DragStart
+		local startPosition = ThemeObjects.MM2RoleDetails.StartPosition
+		HubState.MM2RoleDetailsPanel.Position = UDim2.new(startPosition.X.Scale, startPosition.X.Offset + delta.X, startPosition.Y.Scale, startPosition.Y.Offset + delta.Y)
+	end
+end))
+
+HubState.MM2RoleDetailsKeybindEntry = {Name = "MM2 Role Popup", Category = "Murder Mystery 2", Storage = "MM2RoleDetails", Button = HubState.MM2RoleDetailsBindButton, Get = function() return ThemeObjects.MM2RoleDetails.Keybind end, Set = function(key)
+	ThemeObjects.MM2RoleDetails.Keybind = key
+	SaveGameKeybind("MM2RoleDetails", key)
+	if HubState.MM2RoleDetailsBindButton then HubState.MM2RoleDetailsBindButton.Text = KeybindText(key) end
+end, Action = function()
+	ThemeObjects.MM2RoleDetails.Toggle()
+end}
+ThemeObjects.AddFeatureKeybind(HubState.MM2RoleDetailsKeybindEntry)
+HubState.MM2RoleDetailsBindButton.MouseButton1Click:Connect(function()
+	ThemeObjects.BeginFeatureKeybind(HubState.MM2RoleDetailsKeybindEntry, HubState.MM2RoleDetailsBindButton)
+end)
+
+HubState.MM2ESPEnabled = false
+HubState.MurdererRoleESPEnabled = false
+HubState.SheriffRoleESPEnabled = false
+HubState.CurrentMurderer = nil
+HubState.CurrentSheriff = nil
+
+local function UpdateRoleHighlights()
+	for _, targetPlayer in ipairs(Players:GetPlayers()) do
+		local character = targetPlayer.Character
+		if character then
+			local isMurdererOverride = targetPlayer ~= Player and HubState.MurdererRoleESPEnabled and targetPlayer == HubState.CurrentMurderer
+			local isSheriffOverride = targetPlayer ~= Player and HubState.SheriffRoleESPEnabled and targetPlayer == HubState.CurrentSheriff
+			local roleOverride = isMurdererOverride or isSheriffOverride
+
+			local murdererHighlight = character:FindFirstChild("MurdererRoleHighlight")
+			local sheriffHighlight = character:FindFirstChild("SheriffRoleHighlight")
+			if isMurdererOverride then
+				if sheriffHighlight then sheriffHighlight:Destroy() end
+				if not murdererHighlight then
+					murdererHighlight = Instance.new("Highlight")
+					murdererHighlight.Name = "MurdererRoleHighlight"
+					murdererHighlight.Parent = character
+				end
+				murdererHighlight.FillColor = Color3.fromRGB(255, 70, 70)
+				murdererHighlight.OutlineColor = Color3.fromRGB(255, 40, 40)
+				murdererHighlight.FillTransparency = 0.72
+				murdererHighlight.OutlineTransparency = 0
+			else
+				if murdererHighlight then murdererHighlight:Destroy() end
+			end
+
+			if isSheriffOverride then
+				if not sheriffHighlight then
+					sheriffHighlight = Instance.new("Highlight")
+					sheriffHighlight.Name = "SheriffRoleHighlight"
+					sheriffHighlight.Parent = character
+				end
+				sheriffHighlight.FillColor = Color3.fromRGB(70, 130, 255)
+				sheriffHighlight.OutlineColor = Color3.fromRGB(40, 100, 255)
+				sheriffHighlight.FillTransparency = 0.72
+				sheriffHighlight.OutlineTransparency = 0
+			else
+				if sheriffHighlight then sheriffHighlight:Destroy() end
+			end
+
+			local regularHighlight = character:FindFirstChild("ESPHighlight")
+			if regularHighlight then
+				if roleOverride then regularHighlight:Destroy()
+				else regularHighlight.Enabled = HubState.ESPEnabled end
+			end
+		end
+	end
+end
+
+HubState.MurdererESPBtn.MouseButton1Click:Connect(function()
+	PlayClick()
+	HubState.MurdererRoleESPEnabled = not HubState.MurdererRoleESPEnabled
+	HubState.MurdererESPBtn.Text = HubState.MurdererRoleESPEnabled and "ON" or "ESP"
+	if ThemeObjects.RefreshMM2RolesFromTools then ThemeObjects.RefreshMM2RolesFromTools() end
+	if HubState.MurdererRoleESPEnabled and ThemeObjects.RefreshMM2RolesFromRemote then ThemeObjects.RefreshMM2RolesFromRemote() end
+	UpdateRoleHighlights()
+end)
+
+HubState.SheriffESPBtn.MouseButton1Click:Connect(function()
+	PlayClick()
+	HubState.SheriffRoleESPEnabled = not HubState.SheriffRoleESPEnabled
+	HubState.SheriffESPBtn.Text = HubState.SheriffRoleESPEnabled and "ON" or "ESP"
+	HubState.GunDropESP.Enabled = HubState.SheriffRoleESPEnabled
+	HubState.GunDropESP.Refresh()
+	if ThemeObjects.RefreshMM2RolesFromTools then ThemeObjects.RefreshMM2RolesFromTools() end
+	if HubState.SheriffRoleESPEnabled and ThemeObjects.RefreshMM2RolesFromRemote then ThemeObjects.RefreshMM2RolesFromRemote() end
+	UpdateRoleHighlights()
+end)
+
+ThemeObjects.SetMM2ESP = function(enabled)
+	if enabled and ThemeObjects.DisableOtherESP then ThemeObjects.DisableOtherESP("MM2") end
+	HubState.MM2ESPEnabled = enabled == true
+	HubState.MurdererRoleESPEnabled = HubState.MM2ESPEnabled
+	HubState.SheriffRoleESPEnabled = HubState.MM2ESPEnabled
+	HubState.MurdererESPBtn.Text = HubState.MM2ESPEnabled and "ON" or "ESP"
+	HubState.SheriffESPBtn.Text = HubState.MM2ESPEnabled and "ON" or "ESP"
+	if HubState.MM2ESPToggle then HubState.MM2ESPToggle.Text = HubState.MM2ESPEnabled and "On" or "Off" end
+	if HubState.MM2ESPTitle then HubState.MM2ESPTitle.TextColor3 = HubState.MM2ESPEnabled and AccentColor or InactiveTextColor() end
+	HubState.GunDropESP.Enabled = HubState.MM2ESPEnabled
+	HubState.GunDropESP.Refresh()
+	if ThemeObjects.RefreshMM2RolesFromTools then ThemeObjects.RefreshMM2RolesFromTools() end
+	if HubState.MM2ESPEnabled and ThemeObjects.RefreshMM2RolesFromRemote then ThemeObjects.RefreshMM2RolesFromRemote() end
+	UpdateRoleHighlights()
+end
+
+local function PlayerHasRoleTool(targetPlayer, toolName)
+	local wantedName = toolName:lower()
+	local function ContainerHasTool(container)
+		if container then
+			for _, item in ipairs(container:GetChildren()) do
+				if item.Name:lower() == wantedName then return true end
+			end
+		end
+		return false
+	end
+	return ContainerHasTool(targetPlayer.Character) or ContainerHasTool(targetPlayer:FindFirstChild("Backpack"))
+end
+
+local function FormatRolePlayer(targetPlayer)
+	if not targetPlayer then return "Unknown" end
+	return string.format("%s (@%s)", targetPlayer.DisplayName or targetPlayer.Name, targetPlayer.Name)
+end
+
+HubState.LastMurdererAvatarId = 0
+HubState.LastSheriffAvatarId = 0
+
+local function UpdateRoleAvatar(imageLabel, targetPlayer, roleName)
+	imageLabel.Image = ""
+	if not targetPlayer then return end
+	local expectedUserId = targetPlayer.UserId
+	task.spawn(function()
+		local success, image = pcall(function()
+			return Players:GetUserThumbnailAsync(expectedUserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
+		end)
+		local stillCurrent = (roleName == "Murderer" and HubState.CurrentMurderer == targetPlayer)
+			or (roleName == "Sheriff" and HubState.CurrentSheriff == targetPlayer)
+		if success and stillCurrent then
+			imageLabel.Image = image
+			if ThemeObjects.RefreshMM2RoleDetails then ThemeObjects.RefreshMM2RoleDetails() end
+		end
+	end)
+end
+
+ThemeObjects.RefreshMM2RoleDisplay = function()
+	local murdererAvatarId = HubState.CurrentMurderer and HubState.CurrentMurderer.UserId or 0
+	local sheriffAvatarId = HubState.CurrentSheriff and HubState.CurrentSheriff.UserId or 0
+	if murdererAvatarId ~= HubState.LastMurdererAvatarId then
+		HubState.LastMurdererAvatarId = murdererAvatarId
+		UpdateRoleAvatar(HubState.MurdererAvatar, HubState.CurrentMurderer, "Murderer")
+	end
+	if sheriffAvatarId ~= HubState.LastSheriffAvatarId then
+		HubState.LastSheriffAvatarId = sheriffAvatarId
+		UpdateRoleAvatar(HubState.SheriffAvatar, HubState.CurrentSheriff, "Sheriff")
+	end
+	HubState.MurdererRoleLabel.Text = FormatRolePlayer(HubState.CurrentMurderer)
+	HubState.SheriffRoleLabel.Text = FormatRolePlayer(HubState.CurrentSheriff)
+	if ThemeObjects.RefreshMM2RoleDetails then ThemeObjects.RefreshMM2RoleDetails() end
+	UpdateRoleHighlights()
+end
+
+ThemeObjects.ClearMM2Roles = function()
+	HubState.CurrentMurderer = nil
+	HubState.CurrentSheriff = nil
+	HubState.MM2ToolRolesActive = false
+	ThemeObjects.RefreshMM2RoleDisplay()
+end
+
+local function FindRoleHolder(toolName)
+	for _, targetPlayer in ipairs(Players:GetPlayers()) do
+		if PlayerHasRoleTool(targetPlayer, toolName) then return targetPlayer end
+	end
+	return nil
+end
+
+ThemeObjects.ApplyMM2Roles = function(murderer, sheriff, source)
+	if source then HubState.MM2RoleSource = source end
+	if murderer ~= HubState.CurrentMurderer or sheriff ~= HubState.CurrentSheriff then
+		HubState.CurrentMurderer = murderer
+		HubState.CurrentSheriff = sheriff
+		ThemeObjects.RefreshMM2RoleDisplay()
+	end
+	return murderer, sheriff
+end
+
+ThemeObjects.ResolveMM2RolePlayer = function(...)
+	local seen = {}
+	local function playerFromText(text)
+		if type(text) ~= "string" or text == "" then return nil end
+		local lowerText = text:lower()
+		for _, targetPlayer in ipairs(Players:GetPlayers()) do
+			local name = targetPlayer.Name:lower()
+			local displayName = (targetPlayer.DisplayName or targetPlayer.Name):lower()
+			if lowerText == name or lowerText == displayName or lowerText:find(name, 1, true) or lowerText:find(displayName, 1, true) then
+				return targetPlayer
+			end
+		end
+		return nil
+	end
+	local function resolve(value, depth)
+		if depth > 4 or value == nil then return nil end
+		local valueType = typeof(value)
+		if valueType == "Instance" then
+			if value:IsA("Player") then return value end
+			if value:IsA("ObjectValue") then return resolve(value.Value, depth + 1) end
+			if value:IsA("StringValue") then return playerFromText(tostring(value.Value)) end
+			if value:IsA("IntValue") or value:IsA("NumberValue") then
+				for _, targetPlayer in ipairs(Players:GetPlayers()) do
+					if targetPlayer.UserId == value.Value then return targetPlayer end
+				end
+			end
+			if value:IsA("TextLabel") or value:IsA("TextButton") then return playerFromText(value.Text) end
+			return playerFromText(value.Name)
+		elseif valueType == "string" then
+			return playerFromText(value)
+		elseif valueType == "number" then
+			for _, targetPlayer in ipairs(Players:GetPlayers()) do
+				if targetPlayer.UserId == value then return targetPlayer end
+			end
+		elseif valueType == "table" and not seen[value] then
+			seen[value] = true
+			for key, childValue in pairs(value) do
+				local found = resolve(childValue, depth + 1) or resolve(key, depth + 1)
+				if found then return found end
+			end
+		end
+		return nil
+	end
+	for _, value in ipairs({...}) do
+		local found = resolve(value, 0)
+		if found then return found end
+	end
+	return nil
+end
+
+ThemeObjects.SetMM2RoleFromClue = function(roleName, ...)
+	local targetPlayer = ThemeObjects.ResolveMM2RolePlayer(...)
+	if not targetPlayer then return false end
+	if HubState.MM2ToolRolesActive and (FindRoleHolder("Knife") or FindRoleHolder("Gun")) then return false end
+	local murderer = HubState.CurrentMurderer
+	local sheriff = HubState.CurrentSheriff
+	if roleName == "Murderer" then
+		murderer = targetPlayer
+	elseif roleName == "Sheriff" then
+		sheriff = targetPlayer
+	else
+		return false
+	end
+	HubState.LastMM2RemoteRoleAt = os.clock()
+	ThemeObjects.ApplyMM2Roles(murderer, sheriff, "Remote")
+	return true
+end
+
+ThemeObjects.ApplyMM2RolesFromPlayerData = function(playerData)
+	if type(playerData) ~= "table" then return false end
+	local murderer = nil
+	local sheriff = nil
+	local sawRoleData = false
+	for playerName, roundData in pairs(playerData) do
+		if type(playerName) == "string" and type(roundData) == "table" then
+			local targetPlayer = Players:FindFirstChild(playerName)
+			local roleName = rawget(roundData, "Role")
+			if targetPlayer and type(roleName) == "string" then
+				sawRoleData = true
+				if roleName == "Murderer" then
+					murderer = targetPlayer
+				elseif roleName == "Sheriff" or roleName == "Hero" then
+					sheriff = targetPlayer
+				end
+			end
+		end
+	end
+	if not sawRoleData then return false end
+	local roleSignature = tostring(murderer and murderer.UserId or 0) .. ":" .. tostring(sheriff and sheriff.UserId or 0)
+	HubState.MM2RoundRoleSignature = roleSignature
+	if HubState.MM2IgnoredRoundRoleSignature == roleSignature then return false end
+	local toolMurderer = FindRoleHolder("Knife")
+	local toolSheriff = FindRoleHolder("Gun")
+	if toolMurderer or toolSheriff then
+		HubState.MM2ToolRolesActive = true
+		return false
+	end
+	HubState.MM2ToolRolesActive = false
+	HubState.LastMM2RemoteRoleAt = os.clock()
+	ThemeObjects.ApplyMM2Roles(murderer, sheriff, "RoundData")
+	return true
+end
+
+ThemeObjects.RefreshMM2RolesFromCurrentRound = function()
+	if game.PlaceId ~= 142823291 then return false end
+	local now = os.clock()
+	local requestCooldown = HubState.MM2RoleRevealBurstActive and 0.25 or 0.75
+	if now - (HubState.LastMM2CurrentPlayerDataRequest or 0) < requestCooldown then return false end
+	HubState.LastMM2CurrentPlayerDataRequest = now
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	local gameplay = remotes and remotes:FindFirstChild("Gameplay")
+	local getCurrentPlayerData = gameplay and gameplay:FindFirstChild("GetCurrentPlayerData")
+	if not getCurrentPlayerData or not getCurrentPlayerData:IsA("RemoteFunction") then return false end
+	if HubState.MM2CurrentPlayerDataRequestBusy then return false end
+	HubState.MM2CurrentPlayerDataRequestBusy = true
+	task.spawn(function()
+		local success, playerData = pcall(function()
+			return getCurrentPlayerData:InvokeServer()
+		end)
+		HubState.MM2CurrentPlayerDataRequestBusy = false
+		if success then
+			ThemeObjects.ApplyMM2RolesFromPlayerData(playerData)
+		end
+	end)
+	return false
+end
+
+ThemeObjects.EnsureMM2RoleClueListeners = function()
+	if HubState.MM2RoleClueListenersStarted then return end
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	local extras = remotes and remotes:FindFirstChild("Extras")
+	local setMurderer = extras and extras:FindFirstChild("SetMurderer")
+	local setSheriff = extras and extras:FindFirstChild("SetSheriff")
+	if not setMurderer and not setSheriff then return end
+	HubState.MM2RoleClueListenersStarted = true
+	if setMurderer and setMurderer:IsA("RemoteEvent") then
+		HubState.Connections.MM2SetMurdererClue = setMurderer.OnClientEvent:Connect(function(...)
+			ThemeObjects.SetMM2RoleFromClue("Murderer", ...)
+		end)
+	end
+	if setSheriff and setSheriff:IsA("RemoteEvent") then
+		HubState.Connections.MM2SetSheriffClue = setSheriff.OnClientEvent:Connect(function(...)
+			ThemeObjects.SetMM2RoleFromClue("Sheriff", ...)
+		end)
+	end
+end
+
+ThemeObjects.RefreshMM2RolesFromRemote = function()
+	if ThemeObjects.RefreshMM2RolesFromCurrentRound and ThemeObjects.RefreshMM2RolesFromCurrentRound() then return end
+	if ThemeObjects.EnsureMM2RoleClueListeners then ThemeObjects.EnsureMM2RoleClueListeners() end
+end
+
+ThemeObjects.StartMM2RoleRevealBurst = function()
+	if HubState.MM2RoleRevealBurstActive then return end
+	HubState.MM2RoleRevealBurstActive = true
+	task.spawn(function()
+		for _ = 1, 8 do
+			if ThemeObjects.RefreshMM2RolesFromRemote then ThemeObjects.RefreshMM2RolesFromRemote() end
+			if ThemeObjects.RefreshMM2RolesFromTools then ThemeObjects.RefreshMM2RolesFromTools() end
+			task.wait(0.18)
+		end
+		HubState.MM2RoleRevealBurstActive = false
+	end)
+end
+
+ThemeObjects.RepairMM2PCGui = function()
+	if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then return end
+	local playerGui = Player:FindFirstChildOfClass("PlayerGui")
+	if not playerGui then return end
+	HubState.MM2PCGuiRepairStartedAt = HubState.MM2PCGuiRepairStartedAt or os.clock()
+	pcall(function() _G.MobileDevice = nil end)
+
+	if not HubState.Connections.MM2PlayerGuiRepairWatcher then
+		HubState.Connections.MM2PlayerGuiRepairWatcher = playerGui.ChildAdded:Connect(function(child)
+			if child.Name == "Loading" or child.Name == "Loading_Clean" or child.Name == "TouchInteractButtons" then
+				task.defer(function()
+					if ThemeObjects.RepairMM2PCGui then ThemeObjects.RepairMM2PCGui() end
+				end)
+			end
+		end)
+	end
+
+	local function HideGuiObject(object)
+		if object:IsA("ScreenGui") then
+			object.Enabled = false
+		elseif object:IsA("GuiObject") then
+			object.Visible = false
+		end
+	end
+
+	local touchInteractButtons = playerGui:FindFirstChild("TouchInteractButtons")
+	if touchInteractButtons then
+		pcall(function() HideGuiObject(touchInteractButtons) end)
+	end
+
+	local mainGui = playerGui:FindFirstChild("MainGUI")
+	local gameFrame = mainGui and mainGui:FindFirstChild("Game")
+	if gameFrame then
+		local rightBar = gameFrame:FindFirstChild("RightBar")
+		if rightBar then
+			rightBar.Visible = false
+			local equipWeapon = rightBar:FindFirstChild("EquipWeapon")
+			if equipWeapon then equipWeapon.Visible = false end
+			local throwButton = rightBar:FindFirstChild("Throw")
+			if throwButton then throwButton.Visible = false end
+		end
+		local bottomBar = gameFrame:FindFirstChild("BottomBar")
+		local perkButton = bottomBar and bottomBar:FindFirstChild("Perk")
+		if perkButton then perkButton.Visible = false end
+	end
+
+	local mayHideLoading = mainGui ~= nil or os.clock() - (HubState.MM2PCGuiRepairStartedAt or 0) > 8
+	if mayHideLoading then
+		for _, guiName in ipairs({"Loading", "Loading_Clean"}) do
+			local loadingGui = playerGui:FindFirstChild(guiName)
+			if loadingGui then
+				pcall(function()
+					HideGuiObject(loadingGui)
+					for _, descendant in ipairs(loadingGui:GetDescendants()) do
+						HideGuiObject(descendant)
+					end
+				end)
+			end
+		end
+	end
+
+	if mainGui then
+		local pcHiddenNames = {
+			Mobile = true,
+			Phone = true,
+			Tablet = true,
+			TouchControls = true,
+			TouchInteractButtons = true,
+			EquipWeapon = true,
+			Throw = true,
+			Perk = true,
+			Event = true,
+			EventButton = true,
+			Events = true,
+		}
+		for _, descendant in ipairs(mainGui:GetDescendants()) do
+			if pcHiddenNames[descendant.Name] then
+				pcall(function() HideGuiObject(descendant) end)
+			end
+		end
+	end
+
+	pcall(function()
+		local touchGui = CoreGui:FindFirstChild("TouchGui")
+		if touchGui then touchGui.Enabled = false end
+	end)
+end
+
+task.spawn(function()
+	for _ = 1, 40 do
+		if ThemeObjects.EnsureMM2RoleClueListeners then ThemeObjects.EnsureMM2RoleClueListeners() end
+		if HubState.MM2RoleClueListenersStarted then break end
+		task.wait(0.25)
+	end
+end)
+
+ThemeObjects.RefreshMM2RolesFromTools = function()
+	local murderer = FindRoleHolder("Knife")
+	local sheriff = FindRoleHolder("Gun")
+	if murderer or sheriff then
+		HubState.MM2ToolRolesActive = true
+		HubState.MM2IgnoredRoundRoleSignature = nil
+		return ThemeObjects.ApplyMM2Roles(murderer, sheriff, "Tools")
+	end
+	if HubState.MM2ToolRolesActive then
+		HubState.MM2ToolRolesActive = false
+		HubState.MM2IgnoredRoundRoleSignature = HubState.MM2RoundRoleSignature
+		return ThemeObjects.ApplyMM2Roles(nil, nil, "Tools")
+	end
+	local hasFreshEarlyRole = HubState.MM2RoleSource and HubState.MM2RoleSource ~= "Tools" and os.clock() - (HubState.LastMM2RemoteRoleAt or 0) < 45
+	if not murderer and not sheriff and hasFreshEarlyRole then
+		return HubState.CurrentMurderer, HubState.CurrentSheriff
+	end
+	return ThemeObjects.ApplyMM2Roles(murderer, sheriff, "Tools")
+end
+
+HubState.Connections.MM2ToolRoleScanner = RunService.Heartbeat:Connect(function()
+	local mm2PageActive = HubState.SelectedGame == "MM2" or (HubState.MM2Page and HubState.MM2Page.Visible)
+	local needsScan = mm2PageActive or HubState.MM2ESPEnabled or HubState.MurdererRoleESPEnabled or HubState.SheriffRoleESPEnabled or HubState.KillEnabled or HubState.AutoShootEnabled or HubState.ESPEnabled or (ThemeObjects.DeepESP and ThemeObjects.DeepESP.Enabled)
+	if not needsScan then return end
+	local now = os.clock()
+	if now - (HubState.LastMM2ToolRoleScan or 0) < 0.25 then return end
+	HubState.LastMM2ToolRoleScan = now
+	if now - (HubState.LastMM2RoleRemoteScan or 0) >= 0.8 then
+		HubState.LastMM2RoleRemoteScan = now
+		ThemeObjects.RefreshMM2RolesFromRemote()
+	end
+	ThemeObjects.RefreshMM2RolesFromTools()
+end)
+
+local function RestoreKillHitboxes()
+	for part, original in pairs(HubState.KillHitboxOriginals) do
+		if part and part.Parent then
+			part.Size = original.Size
+			part.Transparency = original.Transparency
+			part.CanCollide = original.CanCollide
+			part.CanTouch = original.CanTouch
+			part.Massless = original.Massless
+		end
+	end
+	HubState.KillHitboxOriginals = {}
+end
+
+local function GetLocalKnife()
+	local character = Player.Character
+	local backpack = Player:FindFirstChild("Backpack")
+	local knife = character and character:FindFirstChild("Knife")
+	if not knife and backpack then knife = backpack:FindFirstChild("Knife") end
+	return knife and knife:IsA("Tool") and knife or nil
+end
+
+local function SetKillEnabled(enabled)
+	HubState.KillEnabled = enabled
+	HubState.KillToggle.Text = enabled and "On" or "Off"
+	HubState.KillTitle.TextColor3 = enabled and Color3.fromRGB(255, 80, 80) or InactiveTextColor()
+	if enabled and ThemeObjects.RefreshMM2RolesFromRemote then ThemeObjects.RefreshMM2RolesFromRemote() end
+	if not enabled then RestoreKillHitboxes() end
+end
+
+HubState.KillToggle.MouseButton1Click:Connect(function()
+	PlayClick()
+	SetKillEnabled(not HubState.KillEnabled)
+end)
+
+HubState.Connections.KillAll = RunService.Heartbeat:Connect(function()
+	if not HubState.KillEnabled then return end
+	local knife = GetLocalKnife()
+	local character = Player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if HubState.CurrentMurderer ~= Player or not knife or not humanoid or humanoid.Health <= 0 then
+		RestoreKillHitboxes()
+		return
+	end
+
+	if knife.Parent ~= character then
+		pcall(function() humanoid:EquipTool(knife) end)
+	end
+
+	local aliveTargets = {}
+	local priorityRoot = nil
+	if HubState.CurrentSheriff and HubState.CurrentSheriff ~= Player then
+		local sheriffCharacter = HubState.CurrentSheriff.Character
+		local sheriffHumanoid = sheriffCharacter and sheriffCharacter:FindFirstChildOfClass("Humanoid")
+		local sheriffRoot = sheriffCharacter and sheriffCharacter:FindFirstChild("HumanoidRootPart")
+		if sheriffHumanoid and sheriffHumanoid.Health > 0 and sheriffRoot then priorityRoot = sheriffRoot end
+	end
+
+	if priorityRoot then
+		for part, original in pairs(HubState.KillHitboxOriginals) do
+			if part ~= priorityRoot then
+				if part and part.Parent then
+					part.Size = original.Size
+					part.Transparency = original.Transparency
+					part.CanCollide = original.CanCollide
+					part.CanTouch = original.CanTouch
+					part.Massless = original.Massless
+				end
+				HubState.KillHitboxOriginals[part] = nil
+			end
+		end
+	end
+
+	for _, targetPlayer in ipairs(Players:GetPlayers()) do
+		if targetPlayer ~= Player then
+			local targetCharacter = targetPlayer.Character
+			local targetHumanoid = targetCharacter and targetCharacter:FindFirstChildOfClass("Humanoid")
+			local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
+			if targetHumanoid and targetHumanoid.Health > 0 and targetRoot and (not priorityRoot or targetRoot == priorityRoot) then
+				table.insert(aliveTargets, targetRoot)
+				if type(firetouchinterest) ~= "function" then
+					if not HubState.KillHitboxOriginals[targetRoot] then
+						HubState.KillHitboxOriginals[targetRoot] = {
+							Size = targetRoot.Size,
+							Transparency = targetRoot.Transparency,
+							CanCollide = targetRoot.CanCollide,
+							CanTouch = targetRoot.CanTouch,
+							Massless = targetRoot.Massless,
+						}
+					end
+					targetRoot.Size = Vector3.new(18, 18, 18)
+					targetRoot.Transparency = 1
+					targetRoot.CanCollide = false
+					targetRoot.CanTouch = true
+					targetRoot.Massless = true
+				end
+			end
+		end
+	end
+
+	local now = os.clock()
+	if now - HubState.LastKnifeSwing >= 0.1 then
+		HubState.LastKnifeSwing = now
+		pcall(function() knife:Activate() end)
+		if #aliveTargets > 0 then
+			HubState.StabTargetIndex = (HubState.StabTargetIndex % #aliveTargets) + 1
+			local targetRoot = aliveTargets[HubState.StabTargetIndex]
+			local knifeHandle = knife:FindFirstChild("Handle") or knife:FindFirstChildWhichIsA("BasePart")
+			if knifeHandle and type(firetouchinterest) == "function" then
+				task.spawn(function()
+					pcall(function()
+						firetouchinterest(knifeHandle, targetRoot, 0)
+						task.wait(0.03)
+						firetouchinterest(knifeHandle, targetRoot, 1)
+					end)
+				end)
+			end
+		end
+		local localRoot = character and character:FindFirstChild("HumanoidRootPart")
+		if localRoot then
+			localRoot.AssemblyAngularVelocity = Vector3.zero
+			if localRoot.AssemblyLinearVelocity.Magnitude > 80 then
+				localRoot.AssemblyLinearVelocity = localRoot.AssemblyLinearVelocity.Unit * 18
+			end
+			ThemeObjects.SetRootUpright(localRoot, localRoot.CFrame, localRoot.Position)
+		end
+	end
+end)
+
+do
+	local autoShootTitle = Instance.new("TextLabel")
+	autoShootTitle.Size = UDim2.new(0, 56, 0, 17)
+	autoShootTitle.Position = UDim2.new(0, 176, 0, 70)
+	autoShootTitle.BackgroundTransparency = 1
+	autoShootTitle.Text = "Auto Shoot:"
+	autoShootTitle.Font = Enum.Font.GothamBold
+	autoShootTitle.TextSize = 9
+	autoShootTitle.TextColor3 = InactiveTextColor()
+	autoShootTitle.TextXAlignment = Enum.TextXAlignment.Left
+	autoShootTitle.Parent = HubState.MM2Page
+	table.insert(ThemeObjects.Texts, autoShootTitle)
+
+	local autoShootToggle = Instance.new("TextButton")
+	autoShootToggle.Size = UDim2.new(0, 32, 0, 17)
+	autoShootToggle.Position = UDim2.new(0, 240, 0, 70)
+	autoShootToggle.BackgroundColor3 = Color3.fromRGB(50, 50, 68)
+	autoShootToggle.BackgroundTransparency = 0.8
+	autoShootToggle.BorderSizePixel = 0
+	autoShootToggle.Text = "Off"
+	autoShootToggle.Font = Enum.Font.GothamBold
+	autoShootToggle.Parent = HubState.MM2Page
+	table.insert(ThemeObjects.Backgrounds, autoShootToggle)
+	table.insert(ThemeObjects.Texts, autoShootToggle)
+	Instance.new("UICorner", autoShootToggle).CornerRadius = UDim.new(0, 4)
+
+	-- Larger MM2 controls live in a dedicated scrolling area below the role reveal.
+	local MM2ControlsScroll = Instance.new("ScrollingFrame")
+	MM2ControlsScroll.Name = "MM2ControlsScroll"
+	MM2ControlsScroll.Size = UDim2.new(1, -12, 1, -74)
+	MM2ControlsScroll.Position = UDim2.new(0, 6, 0, 72)
+	MM2ControlsScroll.BackgroundTransparency = 1
+	MM2ControlsScroll.BorderSizePixel = 0
+	MM2ControlsScroll.ScrollBarThickness = 3
+	MM2ControlsScroll.ScrollBarImageColor3 = AccentColor
+	MM2ControlsScroll.ScrollingDirection = Enum.ScrollingDirection.Y
+	MM2ControlsScroll.ElasticBehavior = Enum.ElasticBehavior.Never
+	MM2ControlsScroll.VerticalScrollBarInset = Enum.ScrollBarInset.ScrollBar
+	MM2ControlsScroll.CanvasSize = UDim2.new(0, 0, 0, 250)
+	MM2ControlsScroll.ClipsDescendants = true
+	MM2ControlsScroll.Parent = HubState.MM2Page
+
+	local function CreateMM2ControlRow(name, widthScale, widthOffset, xScale, xOffset, y, height)
+		local row = Instance.new("Frame")
+		row.Name = name
+		row.Size = UDim2.new(widthScale, widthOffset, 0, height)
+		row.Position = UDim2.new(xScale, xOffset, 0, y)
+		row.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
+		row.BackgroundTransparency = 0.92
+		row.BorderSizePixel = 0
+		row.Parent = MM2ControlsScroll
+		table.insert(ThemeObjects.Backgrounds, row)
+		Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
+		return row
+	end
+
+	local mm2ESPRow = CreateMM2ControlRow("MM2ESPRow", 1, -8, 0, 4, -44, 38)
+	mm2ESPRow.Visible = false
+	local roleInfoRow = CreateMM2ControlRow("MM2RoleInfoRow", 1, -8, 0, 4, 4, 38)
+	local stabRow = CreateMM2ControlRow("AutoStabRow", 1, -8, 0, 4, 48, 38)
+	local shootRow = CreateMM2ControlRow("AutoShootRow", 1, -8, 0, 4, 92, 38)
+	local gunRow = CreateMM2ControlRow("AutoGunRow", 1, -8, 0, 4, 136, 38)
+	local coinRow = CreateMM2ControlRow("CoinFarmRow", 1, -8, 0, 4, 180, 38)
+
+	local function PlaceMM2Control(title, toggle, row, fullWidth)
+		title.Size = fullWidth and UDim2.new(0, 130, 0, 24) or UDim2.new(0, 82, 0, 22)
+		title.Position = fullWidth and UDim2.new(0, 12, 0, 7) or UDim2.new(0, 8, 0, 7)
+		title.TextSize = fullWidth and 11 or 10
+		title.Parent = row
+		toggle.Size = fullWidth and UDim2.new(0, 44, 0, 22) or UDim2.new(0, 38, 0, 20)
+		toggle.Position = fullWidth and UDim2.new(1, -52, 0, 8) or UDim2.new(1, -44, 0, 8)
+		toggle.TextSize = 9
+		toggle.Parent = row
+	end
+
+	HubState.MM2ESPTitle = Instance.new("TextLabel")
+	HubState.MM2ESPTitle.BackgroundTransparency = 1
+	HubState.MM2ESPTitle.Text = "Merged ESP:"
+	HubState.MM2ESPTitle.Font = Enum.Font.GothamBold
+	HubState.MM2ESPTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+	HubState.MM2ESPTitle.TextXAlignment = Enum.TextXAlignment.Left
+	table.insert(ThemeObjects.Texts, HubState.MM2ESPTitle)
+	HubState.MM2ESPToggle = Instance.new("TextButton")
+	HubState.MM2ESPToggle.BackgroundColor3 = Color3.fromRGB(50, 50, 68)
+	HubState.MM2ESPToggle.BackgroundTransparency = 0.8
+	HubState.MM2ESPToggle.BorderSizePixel = 0
+	HubState.MM2ESPToggle.Text = "Off"
+	HubState.MM2ESPToggle.Font = Enum.Font.GothamBold
+	table.insert(ThemeObjects.Backgrounds, HubState.MM2ESPToggle)
+	table.insert(ThemeObjects.Texts, HubState.MM2ESPToggle)
+	Instance.new("UICorner", HubState.MM2ESPToggle).CornerRadius = UDim.new(0, 4)
+	PlaceMM2Control(HubState.MM2ESPTitle, HubState.MM2ESPToggle, mm2ESPRow)
+	HubState.MM2ESPToggle.MouseButton1Click:Connect(function()
+		PlayClick()
+		ThemeObjects.SetMM2ESP(not HubState.MM2ESPEnabled)
+	end)
+	table.insert(ThemeObjects.StateTexts, {Object = HubState.MM2ESPTitle, IsEnabled = function() return HubState.MM2ESPEnabled end})
+	HubState.MM2RoleDetailsTitle = Instance.new("TextLabel")
+	HubState.MM2RoleDetailsTitle.BackgroundTransparency = 1
+	HubState.MM2RoleDetailsTitle.Text = "Role Info:"
+	HubState.MM2RoleDetailsTitle.Font = Enum.Font.GothamBold
+	HubState.MM2RoleDetailsTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+	HubState.MM2RoleDetailsTitle.TextXAlignment = Enum.TextXAlignment.Left
+	HubState.MM2RoleDetailsTitle.Size = UDim2.new(0, 110, 0, 22)
+	HubState.MM2RoleDetailsTitle.Position = UDim2.new(0, 8, 0, 7)
+	HubState.MM2RoleDetailsTitle.TextSize = 11
+	HubState.MM2RoleDetailsTitle.Parent = roleInfoRow
+	table.insert(ThemeObjects.Texts, HubState.MM2RoleDetailsTitle)
+	HubState.MM2RoleDetailsButton.Size = UDim2.new(0, 44, 0, 20)
+	HubState.MM2RoleDetailsButton.Position = UDim2.new(1, -96, 0, 8)
+	HubState.MM2RoleDetailsButton.Text = "Open"
+	HubState.MM2RoleDetailsButton.TextSize = 9
+	HubState.MM2RoleDetailsButton.Parent = roleInfoRow
+	HubState.MM2RoleDetailsBindButton.Size = UDim2.new(0, 46, 0, 22)
+	HubState.MM2RoleDetailsBindButton.Position = UDim2.new(1, -50, 0, 7)
+	HubState.MM2RoleDetailsBindButton.TextSize = 9
+	HubState.MM2RoleDetailsBindButton.Parent = roleInfoRow
+	PlaceMM2Control(HubState.KillTitle, HubState.KillToggle, stabRow)
+	PlaceMM2Control(autoShootTitle, autoShootToggle, shootRow)
+	PlaceMM2Control(HubState.AutoGunTitle, HubState.AutoGunToggle, gunRow)
+	PlaceMM2Control(HubState.CoinFarmTitle, HubState.CoinFarmToggle, coinRow)
+	HubState.CoinFarmStatus.Visible = false
+	HubState.CoinFarmStatus.Parent = coinRow
+	ThemeObjects.AddFeatureKeybind({Name = "Auto Gun", Category = "Murder Mystery 2", Storage = "MM2AutoGun", Parent = gunRow, Toggle = HubState.AutoGunToggle, Get = function() return LoadGameKeybind("MM2AutoGun") end, Set = function(key) SaveGameKeybind("MM2AutoGun", key) end, Action = function()
+		SetAutoGunPickupEnabled(not HubState.AutoGunPickupEnabled)
+	end})
+	ThemeObjects.AddFeatureKeybind({Name = "Auto Stab", Category = "Murder Mystery 2", Storage = "MM2AutoStab", Parent = stabRow, Toggle = HubState.KillToggle, Get = function() return LoadGameKeybind("MM2AutoStab") end, Set = function(key) SaveGameKeybind("MM2AutoStab", key) end, Action = function()
+		SetKillEnabled(not HubState.KillEnabled)
+	end})
+	ThemeObjects.AddFeatureKeybind({Name = "Coin Farm", Category = "Murder Mystery 2", Storage = "MM2CoinFarm", Parent = coinRow, Toggle = HubState.CoinFarmToggle, Get = function() return LoadGameKeybind("MM2CoinFarm") end, Set = function(key) SaveGameKeybind("MM2CoinFarm", key) end, Action = ToggleCoinFarm})
+
+	local autoShootEnabled = false
+	local lastGunFired = 0
+	local shotPending = false
+	local AutoShootConfirmWindow = 0.018
+	local AutoShootVisibleHold = 0.045
+	local AutoShootMinLeadTime = 0.055
+	local AutoShootMaxLeadTime = 0.145
+	local AutoShootMotion = {}
+
+	local function GetLocalGun()
+		local character = Player.Character
+		local backpack = Player:FindFirstChild("Backpack")
+		local gun = character and character:FindFirstChild("Gun")
+		if not gun and backpack then gun = backpack:FindFirstChild("Gun") end
+		return gun and gun:IsA("Tool") and gun or nil
+	end
+
+	local function HasClearGunLine(originPosition, targetCharacter, targetPart, aimPosition)
+		local ignoreList = {Player.Character}
+		for _, passthrough in ipairs(game:GetService("CollectionService"):GetTagged("WeaponPassthrough")) do
+			table.insert(ignoreList, passthrough)
+		end
+		local raycastParams = RaycastParams.new()
+		raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+		raycastParams.IgnoreWater = true
+		raycastParams.FilterDescendantsInstances = ignoreList
+		local direction = (aimPosition or targetPart.Position) - originPosition
+
+		for _ = 1, 6 do
+			local result = workspace:Raycast(originPosition, direction, raycastParams)
+			if not result then return true end
+			if result.Instance and result.Instance:IsDescendantOf(targetCharacter) then return true end
+			if result.Instance and result.Instance.Transparency == 1 then
+				table.insert(ignoreList, result.Instance)
+				raycastParams.FilterDescendantsInstances = ignoreList
+			else
+				return false
+			end
+		end
+		return false
+	end
+
+	local function GetAutoShootPart(targetCharacter)
+		if not targetCharacter then return nil end
+		return targetCharacter:FindFirstChild("UpperTorso")
+			or targetCharacter:FindFirstChild("HumanoidRootPart")
+			or targetCharacter:FindFirstChild("Torso")
+			or targetCharacter:FindFirstChild("Head")
+	end
+
+	local function GetAutoShootParts(targetCharacter, preferredPart)
+		local parts = {}
+		local added = {}
+		local function add(part)
+			if part and part:IsA("BasePart") and not added[part] then
+				added[part] = true
+				table.insert(parts, part)
+			end
+		end
+		add(preferredPart)
+		add(targetCharacter and targetCharacter:FindFirstChild("UpperTorso"))
+		add(targetCharacter and targetCharacter:FindFirstChild("Torso"))
+		add(targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart"))
+		add(targetCharacter and targetCharacter:FindFirstChild("LowerTorso"))
+		add(targetCharacter and targetCharacter:FindFirstChild("Head"))
+		return parts
+	end
+
+	local function GetSmoothedTargetVelocity(targetPlayer, targetPart, now)
+		if not targetPlayer or not targetPart then return Vector3.zero end
+		local entry = AutoShootMotion[targetPlayer]
+		if not entry then
+			entry = {}
+			AutoShootMotion[targetPlayer] = entry
+		end
+		local position = targetPart.Position
+		local rawVelocity = targetPart.AssemblyLinearVelocity
+		if entry.Position and entry.Time then
+			local dt = math.max(now - entry.Time, 1 / 240)
+			local measuredVelocity = (position - entry.Position) / dt
+			if measuredVelocity.Magnitude < 220 then
+				rawVelocity = rawVelocity:Lerp(measuredVelocity, 0.65)
+			end
+		end
+		entry.SmoothedVelocity = entry.SmoothedVelocity and entry.SmoothedVelocity:Lerp(rawVelocity, 0.55) or rawVelocity
+		entry.Position = position
+		entry.Time = now
+		return entry.SmoothedVelocity
+	end
+
+	local function GetAutoShootAimPosition(originPosition, targetPart, targetVelocity)
+		local currentPosition = targetPart.Position
+		local distance = (currentPosition - originPosition).Magnitude
+		local leadTime = math.clamp(distance / 650, AutoShootMinLeadTime, AutoShootMaxLeadTime)
+		local leadVelocity = Vector3.new(targetVelocity.X, math.clamp(targetVelocity.Y, -10, 14), targetVelocity.Z)
+		local leadOffset = leadVelocity * leadTime
+		if leadOffset.Magnitude > 12 then leadOffset = leadOffset.Unit * 12 end
+		local aimPosition = currentPosition + leadOffset
+		if targetPart.Name == "HumanoidRootPart" then
+			aimPosition = aimPosition + Vector3.new(0, 1.25, 0)
+		elseif targetPart.Name == "Head" then
+			aimPosition = aimPosition + Vector3.new(0, -0.2, 0)
+		else
+			aimPosition = aimPosition + Vector3.new(0, 0.25, 0)
+		end
+		return aimPosition
+	end
+
+	local function SelectAutoShootAimPosition(originPosition, targetCharacter, preferredPart, targetVelocity)
+		local horizontalVelocity = Vector3.new(targetVelocity.X, 0, targetVelocity.Z)
+		local sideOffset = Vector3.zero
+		if horizontalVelocity.Magnitude > 1 then
+			sideOffset = horizontalVelocity.Unit:Cross(Vector3.new(0, 1, 0))
+			if sideOffset.Magnitude > 0 then sideOffset = sideOffset.Unit * 0.85 end
+		end
+		local softOffsets = {
+			Vector3.zero,
+			Vector3.new(0, 0.7, 0),
+			Vector3.new(0, -0.55, 0),
+			sideOffset,
+			sideOffset * -1,
+		}
+		for _, part in ipairs(GetAutoShootParts(targetCharacter, preferredPart)) do
+			local baseAim = GetAutoShootAimPosition(originPosition, part, targetVelocity)
+			if not HasClearGunLine(originPosition, targetCharacter, part, baseAim) then
+				continue
+			end
+			for _, offset in ipairs(softOffsets) do
+				local candidate = baseAim + offset
+				if HasClearGunLine(originPosition, targetCharacter, part, candidate) then
+					return candidate
+				end
+			end
+		end
+		return nil
+	end
+
+	local function SetAutoShootEnabled(enabled)
+		autoShootEnabled = enabled
+		HubState.AutoShootEnabled = enabled
+		autoShootToggle.Text = enabled and "On" or "Off"
+		autoShootTitle.TextColor3 = enabled and Color3.fromRGB(90, 150, 255) or InactiveTextColor()
+		if enabled and ThemeObjects.RefreshMM2RolesFromTools then ThemeObjects.RefreshMM2RolesFromTools() end
+		if enabled and ThemeObjects.RefreshMM2RolesFromRemote then ThemeObjects.RefreshMM2RolesFromRemote() end
+		if enabled and ThemeObjects.StartMM2RoleRevealBurst then ThemeObjects.StartMM2RoleRevealBurst() end
+		if enabled and HubState.AutoLockEnabled then ToggleAutoLock() end
+	end
+
+	autoShootToggle.MouseButton1Click:Connect(function()
+		PlayClick()
+		SetAutoShootEnabled(not autoShootEnabled)
+	end)
+
+	table.insert(ThemeObjects.StateTexts, {Object = autoShootTitle, IsEnabled = function() return autoShootEnabled end})
+	ThemeObjects.AddFeatureKeybind({Name = "Auto Shoot", Category = "Murder Mystery 2", Storage = "MM2AutoShoot", Parent = shootRow, Toggle = autoShootToggle, Get = function() return LoadGameKeybind("MM2AutoShoot") end, Set = function(key) SaveGameKeybind("MM2AutoShoot", key) end, Action = function()
+		SetAutoShootEnabled(not autoShootEnabled)
+	end})
+
+	HubState.Connections.AutoShoot = RunService.Heartbeat:Connect(function()
+		if not autoShootEnabled then return end
+		if HubState.AutoLockEnabled then ToggleAutoLock() end
+		local shootNow = os.clock()
+		if shootNow - (HubState.LastAutoShootThink or 0) < 0.02 then return end
+		HubState.LastAutoShootThink = shootNow
+		if ThemeObjects.RefreshMM2RolesFromTools and shootNow - (HubState.LastMM2AutoShootRoleScan or 0) >= 0.45 then
+			HubState.LastMM2AutoShootRoleScan = shootNow
+			ThemeObjects.RefreshMM2RolesFromTools()
+		end
+		if HubState.CurrentSheriff ~= Player or not HubState.CurrentMurderer or HubState.CurrentMurderer == Player then return end
+		if HubState.AutoShootClearTarget ~= HubState.CurrentMurderer then
+			HubState.AutoShootClearTarget = HubState.CurrentMurderer
+			HubState.AutoShootClearSince = nil
+		end
+
+		local gun = GetLocalGun()
+		local character = Player.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		local targetCharacter = HubState.CurrentMurderer.Character
+		local targetHumanoid = targetCharacter and targetCharacter:FindFirstChildOfClass("Humanoid")
+		local targetPart = GetAutoShootPart(targetCharacter)
+		if not gun or not humanoid or humanoid.Health <= 0 or not targetHumanoid or targetHumanoid.Health <= 0 or not targetPart then return end
+		if gun.Enabled == false then return end
+
+		if gun.Parent ~= character then
+			pcall(function() humanoid:EquipTool(gun) end)
+			return
+		end
+		if shotPending or shootNow - lastGunFired < 0.2 then return end
+		local localRoot = character:FindFirstChild("HumanoidRootPart")
+		local raycastAttachment = localRoot and localRoot:FindFirstChild("GunRaycastAttachment")
+		local shootRemote = gun:FindFirstChild("Shoot")
+		if not shootRemote or not shootRemote:IsA("RemoteEvent") then return end
+		local shotOrigin = raycastAttachment and raycastAttachment.WorldCFrame or nil
+		if not shotOrigin then return end
+		local firstVelocity = GetSmoothedTargetVelocity(HubState.CurrentMurderer, targetPart, shootNow)
+		local firstAimPosition = SelectAutoShootAimPosition(shotOrigin.Position, targetCharacter, targetPart, firstVelocity)
+		if not firstAimPosition then
+			HubState.AutoShootClearSince = nil
+			return
+		end
+		if not HubState.AutoShootClearSince then HubState.AutoShootClearSince = shootNow end
+		local requiredHold = firstVelocity.Magnitude > 55 and (AutoShootVisibleHold + 0.02) or AutoShootVisibleHold
+		if shootNow - HubState.AutoShootClearSince < requiredHold then return end
+
+		local confirmedMurderer = HubState.CurrentMurderer
+		local firstPosition = targetPart.Position
+		shotPending = true
+		task.delay(AutoShootConfirmWindow, function()
+			shotPending = false
+			if not autoShootEnabled or HubState.CurrentSheriff ~= Player or HubState.CurrentMurderer ~= confirmedMurderer then return end
+
+			local freshCharacter = Player.Character
+			local freshHumanoid = freshCharacter and freshCharacter:FindFirstChildOfClass("Humanoid")
+			local freshTargetCharacter = confirmedMurderer and confirmedMurderer.Character
+			local freshTargetHumanoid = freshTargetCharacter and freshTargetCharacter:FindFirstChildOfClass("Humanoid")
+			local freshTargetPart = GetAutoShootPart(freshTargetCharacter)
+			local freshGun = GetLocalGun()
+			if not freshCharacter or not freshHumanoid or freshHumanoid.Health <= 0 or not freshTargetHumanoid or freshTargetHumanoid.Health <= 0 or not freshTargetPart or not freshGun then return end
+			if freshGun.Parent ~= freshCharacter then return end
+			if freshGun.Enabled == false then return end
+
+			local freshRoot = freshCharacter:FindFirstChild("HumanoidRootPart")
+			local freshAttachment = freshRoot and freshRoot:FindFirstChild("GunRaycastAttachment")
+			local freshRemote = freshGun:FindFirstChild("Shoot")
+			local freshOrigin = freshAttachment and freshAttachment.WorldCFrame
+			if not freshOrigin or not freshRemote or not freshRemote:IsA("RemoteEvent") then return end
+
+			local currentPosition = freshTargetPart.Position
+			local currentVelocity = GetSmoothedTargetVelocity(confirmedMurderer, freshTargetPart, os.clock())
+			local expectedPosition = firstPosition + firstVelocity * AutoShootConfirmWindow
+			local movementError = (currentPosition - expectedPosition).Magnitude
+			local velocityChange = (currentVelocity - firstVelocity).Magnitude
+			if movementError > 16.0 or velocityChange > 180 then return end
+
+			local aimPosition = SelectAutoShootAimPosition(freshOrigin.Position, freshTargetCharacter, freshTargetPart, currentVelocity)
+			if not aimPosition then return end
+			lastGunFired = os.clock()
+			HubState.AutoShootClearSince = nil
+			pcall(function() freshRemote:FireServer(freshOrigin, CFrame.new(aimPosition)) end)
+		end)
+	end)
+end
+
+
+
+ThemeObjects.OpenMM2Page = function()
+	HubState.SelectedGame = "MM2"
+	if IsCurrentGamePage() and Runtime.ActivateGameKeybindScope then Runtime.ActivateGameKeybindScope("MM2") end
+	if HubState.PageHeader then HubState.PageHeader.Text = "MM2" end
+	if HubState.GamesTabButton then HubState.GamesTabButton.Text = "MM2" end
+	if HubState.MM2BackButton then HubState.MM2BackButton.Visible = true end
+	if HubState.GamesPage then HubState.GamesPage.Visible = false; HubState.GamesPage.Position = UDim2.new(1.1, 0, 0, 54) end
+	local quietPage = MainFrame:FindFirstChild("QuietOrDiePage")
+	if quietPage then quietPage.Visible = false; quietPage.Position = UDim2.new(1.1, 0, 0, 54) end
+	local quietCoins = HubState.PageHeader and HubState.PageHeader:FindFirstChild("QuietOrDieCoinsDisplay")
+	if quietCoins then quietCoins.Visible = false end
+	local quietWins = HubState.PageHeader and HubState.PageHeader:FindFirstChild("QuietOrDieWinsDisplay")
+	if quietWins then quietWins.Visible = false end
+	local quietHistory = HubState.PageHeader and HubState.PageHeader:FindFirstChild("QuietOrDieHistoryButton")
+	if quietHistory then quietHistory.Visible = false end
+	HubState.MM2Page.Visible = true
+	HubState.MM2Page.Position = UDim2.new(0, 114, 0, 54)
+	ThemeObjects.ActiveTabName = "Games"
+	HubState.ActiveTabIndex = table.find(HubState.TabNames, "Games") or HubState.ActiveTabIndex
+	HubState.ActiveContentPage = HubState.MM2Page
+	if ThemeObjects.RefreshMM2RolesFromRemote then ThemeObjects.RefreshMM2RolesFromRemote() end
+	if ThemeObjects.RefreshMM2RolesFromTools then ThemeObjects.RefreshMM2RolesFromTools() end
+	if ThemeObjects.StartMM2RoleRevealBurst then ThemeObjects.StartMM2RoleRevealBurst() end
+	UpdateTheme(true)
+end
+ThemeObjects.OpenMM2Page()
